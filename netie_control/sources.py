@@ -402,6 +402,30 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
     },
     {
         "n": "2",
+        "id": "f36-epic-020",
+        "title": "Answer F36 - extract, or live federation",
+        "do": "EPIC-020 has been blocked on this since 2026-08-07. A read-only SQL Server / "
+             "MySQL connector is written and green on dms `park/epic-020-source-db-connector` "
+             "and must not merge until you answer: is F27 reversed, and does 'query "
+             "immediately' mean fast-to-first-answer over an extract, or live federation. "
+             "PRD-001 holds the question; Control only shows that it is open.",
+        "url": "https://github.com/Netie-AI/dms/tree/park/epic-020-source-db-connector",
+        "kind": "you",
+    },
+    {
+        "n": "3",
+        "id": "f45-insights",
+        "title": "Answer F45 - insights + brief epic",
+        "do": "F45 is STOP in the feedback ledger, and option (B) is itself downstream of "
+             "EPIC-021a, which is NEEDS-YOU under F41. Grain-guarded insights are written "
+             "and green on dms `park/f45-space-insights` and must not merge until you pick "
+             "(A) keep under EPIC-022's precision gate, (B) open a thin deterministic epic, "
+             "or (C) decline.",
+        "url": "https://github.com/Netie-AI/dms/tree/park/f45-space-insights",
+        "kind": "you",
+    },
+    {
+        "n": "4",
         "id": "ht1",
         "title": "HT1 live Ship host URL",
         "do": "HUMAN_STOP. A real openable CF/Coolify/Netlify/VPS URL under the leave-machine "
@@ -411,7 +435,7 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
         "kind": "human-stop",
     },
     {
-        "n": "3",
+        "n": "5",
         "id": "ht2",
         "title": "HT2 live FreeRoute with vaulted keys",
         "do": "HUMAN_STOP. Live chat with real vaulted provider keys. summary.priced stays "
@@ -420,7 +444,7 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
         "kind": "human-stop",
     },
     {
-        "n": "4",
+        "n": "6",
         "id": "crew-talk",
         "title": "Talk to agents (Crew)",
         "do": "Converse is Crew, not Control. Control does not auto-route a comment to a "
@@ -429,7 +453,7 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
         "kind": "you",
     },
     {
-        "n": "5",
+        "n": "7",
         "id": "feedback",
         "title": "Feedback on a ticket",
         "do": "Click a fleet/board card. Comment on that GitHub issue. GitHub is the bus "
