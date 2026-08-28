@@ -2,6 +2,14 @@
 
 Append-only. Newest first.
 
+## 2026-08-28 - YOU desk names the two DMS decisions that park finished code
+
+Steps 2 and 3 are F36 (extract vs live federation, open since 2026-08-07) and
+F45 (insights + brief epic). Each links the dms branch that is written, green,
+and waiting. Control decides neither - it shows that they are open. A hold that
+lives only in a PRD markdown file gets merged by the next person. Four 405s
+unchanged; no assign POST; numbering stays contiguous and a test asserts it.
+
 ## 2026-08-28 - Local type stack
 
 Dropped the Google Fonts import so the desk does not wait on the network.

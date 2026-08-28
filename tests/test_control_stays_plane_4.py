@@ -769,6 +769,32 @@ def test_you_desk_is_human_stop_with_github_urls(client: TestClient) -> None:
     assert client.post("/v1/you", json={"run": "ht1"}).status_code != 200
 
 
+def test_you_desk_names_the_two_dms_decisions_that_park_finished_code(
+    client: TestClient,
+) -> None:
+    """A hold that lives only in a PRD markdown file gets merged by the next person.
+
+    Both branches are written, green, and blocked on a founder answer that has been
+    open since 2026-08-07 (F36) and 2026-08-23 (F45). Control does not decide either
+    - it shows that they are open, and links the branch that is waiting.
+    """
+    page = client.get("/").text
+    for fragment in (
+        "F36",
+        "F45",
+        "https://github.com/Netie-AI/dms/tree/park/epic-020-source-db-connector",
+        "https://github.com/Netie-AI/dms/tree/park/f45-space-insights",
+    ):
+        assert fragment in page, fragment
+
+    steps = {s["id"]: s for s in client.get("/v1/you").json()["data"]["steps"]}
+    assert steps["f36-epic-020"]["kind"] == "you"
+    assert steps["f45-insights"]["kind"] == "you"
+    # Numbering stays contiguous, so "step 4" in conversation means one thing.
+    numbers = [s["n"] for s in client.get("/v1/you").json()["data"]["steps"]]
+    assert numbers == [str(i + 1) for i in range(len(numbers))]
+
+
 def test_fleet_cards_can_carry_a_github_href() -> None:
     from netie_control.sources import fleet_from_claims
 

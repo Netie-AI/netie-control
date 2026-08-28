@@ -36,6 +36,7 @@ python -m pytest E:\NetieControl\tests -q
 |----|------|
 | **NEEDS-YOU** | Lift `dms#61` in `FLEET.md`. The PR is MERGED. Gate still HOLD_MISSING |
 | **NEEDS-YOU** | Point **work.netie.ai** at this box (tunnel / Access), then `/healthz` |
+| **NEEDS-YOU** | Answer **F36** (extract vs live federation) and **F45** (insights epic). Both park finished, green dms branches. YOU steps 2 and 3 link them |
 | Not built | FreeRoute budget numbers. Launchers unwired (P-CTL-2: no principal) |
 | Charter | Crew converse inside Control still needs NETIE.md display-launch-converse (DR-PROPOSED). Belt display is shipped |
 
