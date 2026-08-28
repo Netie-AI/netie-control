@@ -5,11 +5,19 @@ Every entry carries an unlock condition. No entry sits here without one.
 ## P-CTL-1 - Cortex internals on the first page
 
 NETIE.md section 3 names live runs, ledger, manifest and refusal views, and a downtime
-banner as the FIRST page. None is built; today's first page is the gate and the board.
+banner as the FIRST page.
 
-**Unlock:** a read-only Cortex endpoint exposing run and refusal history. Control must
-not query the ledger directly - one ledger, reached through Cortex (DMS CLAUDE.md hard
-rule 3), and the same applies here.
+**2026-08-27 first slice:** loopback GET `/health` + `/api/engine/activity` render on
+the page. Unreachable Cortex never paints as up. Control does not query the ledger.
+
+**2026-08-28:** Cortex `GET /api/engine/activity` now includes `governance`
+(ledger tip, bound session ids, refusals; no payloads). Control displays that
+window. It still will not scrape the chain for more.
+
+**Still parked:** a dedicated Cortex GET for refusal/manifest *history* beyond
+the activity window. Unlock remainder: Cortex ships that endpoint; Control
+displays it.
+
 
 ## P-CTL-2 - wiring the launchers
 
@@ -22,12 +30,14 @@ loopback and say so in the SOW.
 
 ## P-CTL-3 - moving Crew's UI here
 
-`CortexOS/crew/ui/index.html` lives inside Cortex, which NETIE.md section 3 forbids -
-*"Cortex does not grow a UI organ."*
+**2026-08-27 first slice:** Crew at `:8020` exposes `GET /v1/belt`. Control
+proxies that JSON onto the first page and at `GET /v1/belt`. Display only.
+HTML is not copied. Converse/handoff stay on Crew because NETIE.md is still
+display-and-launch (`DR-PROPOSED-control-converse.md` is not law).
 
-**Unlock:** Crew's server exposing its board and A2A transcript over HTTP so Control can
-render them remotely. Do not copy the HTML across; that leaves two copies to diverge,
-which is exactly F-0026's root cause class.
+**Still parked:** converse rail inside Control. Unlock: NETIE.md section 3
+amendment merges, then chat routes to Cortex HTTP. 405s stay. Do not copy
+Crew HTML across (F-0026).
 
 ## P-CTL-4 - the estate gate is run as a subprocess
 

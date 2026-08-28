@@ -1,6 +1,6 @@
 # CLAUDE.md - Netie Control agent contract
 
-**Repo:** `Netie-AI/netie-control` (private). **Plane 4.** Operator shell.
+**Repo:** `Netie-AI/netie-control` (public: https://github.com/Netie-AI/netie-control). **Plane 4.** Operator shell.
 
 Governed by the Netie document system. `D:\Netie\NETIE.md` is the constitution and wins
 over anything here. If this file contradicts it, this file is wrong.
@@ -27,6 +27,18 @@ each one. That turns "we decided not to" into something that goes red.
 | `/v1/route` | 405 | OpenVault FreeRoute - Control may display a route, never choose one |
 | `/v1/goal` | 405 | Cortex - deciding work shape is plane 3 |
 | `/v1/run` | 405 | Cortex - no write reaches a customer except through an action type |
+
+## Operator desk (every lane)
+
+Before seating on a ticket, read Control `GET http://127.0.0.1:8040/v1/contract`,
+then `GET /v1/fleet`, `GET /v1/pickup`, and `GET /v1/you`. Pickup is the tray of
+unseated GitHub work. That is the operator view of who holds what. It is **not** a
+third orchestrator: Control still answers 405 on `/v1/run` `/v1/goal` `/v1/route`
+`/v1/secrets`. GitHub Issues remain SoT. Converse lives on Crew `:8020`. HT1 and HT2
+stay HUMAN_STOP - do not invent host URLs or prices.
+
+`AGENTS.md` is the same operator-desk clause in the filename Cursor, Claude Code,
+and Grok look for. It must not contradict this file. It is not a sixth constitution.
 
 ## Hard rules
 
