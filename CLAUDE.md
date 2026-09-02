@@ -31,11 +31,13 @@ each one. That turns "we decided not to" into something that goes red.
 ## Operator desk (every lane)
 
 Before seating on a ticket, read Control `GET http://127.0.0.1:8040/v1/contract`,
-then `GET /v1/fleet`, `GET /v1/pickup`, and `GET /v1/you`. Pickup is the tray of
-unseated GitHub work. That is the operator view of who holds what. It is **not** a
-third orchestrator: Control still answers 405 on `/v1/run` `/v1/goal` `/v1/route`
-`/v1/secrets`. GitHub Issues remain SoT. Converse lives on Crew `:8020`. HT1 and HT2
-stay HUMAN_STOP - do not invent host URLs or prices.
+then `GET /v1/pickup`, `GET /v1/fleet`, `GET /v1/you`, and `GET /v1/coordinate`.
+`GET /v1/coordinate` is the Grok-class invoke map (who to talk to, who runs,
+which desktop app is present).
+Pickup is the tray of unseated GitHub work. That is the operator view of who holds
+what. It is **not** a third orchestrator: Control still answers 405 on `/v1/run`
+`/v1/goal` `/v1/route` `/v1/secrets`. GitHub Issues remain SoT. Converse lives on
+Crew `:8020`. HT1 and HT2 stay HUMAN_STOP - do not invent host URLs or prices.
 
 `AGENTS.md` is the same operator-desk clause in the filename Cursor, Claude Code,
 and Grok look for. It must not contradict this file. It is not a sixth constitution.

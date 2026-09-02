@@ -21,13 +21,25 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from netie_control import sources
 from netie_control.render import render_page
 
 CONSTRUCTOR_SKIN_NAMES = frozenset({"index.html", "app.js", "styles.css", "engine.js", "README.md"})
+
+_CONSTRUCTOR_UNREAD_HTML = (
+    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+    "<title>Constructor unread</title>"
+    "<style>.absent{color:#c99a6a;font-style:italic}</style></head><body>"
+    '<p class="absent">Constructor skin unread. This shell launches the sketch. '
+    "Live run stays Cortex "
+    '<a href="http://127.0.0.1:8010/cortex/constructor/">'
+    "http://127.0.0.1:8010/cortex/constructor/</a>. "
+    "Control is not the engine. POST /v1/run stays 405.</p>"
+    "</body></html>"
+)
 
 
 def constructor_skin_dir() -> Path:
@@ -40,12 +52,17 @@ def constructor_skin_dir() -> Path:
     return Path(r"E:\Constructor")
 
 
-def _constructor_file(name: str) -> Path:
+def _constructor_unread() -> HTMLResponse:
+    """Missing skin is a stated absence, not FastAPI JSON that looks like a crash."""
+    return HTMLResponse(_CONSTRUCTOR_UNREAD_HTML, status_code=503)
+
+
+def _constructor_file(name: str) -> Path | None:
     if name not in CONSTRUCTOR_SKIN_NAMES:
         raise HTTPException(status_code=404, detail="not found")
     path = constructor_skin_dir() / name
     if not path.is_file():
-        raise HTTPException(status_code=503, detail="Constructor skin missing")
+        return None
     return path
 
 router = APIRouter()
@@ -96,13 +113,24 @@ def healthz() -> dict[str, Any]:
     return {"status": "ok", "product": "netie-control", "plane": 4}
 
 
+@router.get("/favicon.ico")
+def favicon() -> Response:
+    """Browsers probe this. 204 is a stated empty, not a 404 that looks like a missing app."""
+    return Response(status_code=204)
+
+
 def _reading(fn: Any) -> dict[str, Any]:
     return fn().to_dict()
 
 
-def state(*, include_gate: bool = True) -> dict[str, Any]:
-    """Desk payload. Gate is optional so GET / can paint pickup first."""
+def state(*, include_gate: bool = True, include_board: bool = True, include_pads: bool = True) -> dict[str, Any]:
+    """Desk payload. Gate, gh board, and Claude pads are optional so GET / can paint first.
+
+    Talk, health, and belt share the pool so a hung /crew/health cannot stack
+    a second wait after /crew/wakes.
+    """
     jobs = {
+        "crew_talk": sources.crew_talk_view,
         "cortex": sources.cortex_view,
         "openvault": sources.openvault_view,
         "spaceship": sources.spaceship_host_view,
@@ -113,12 +141,14 @@ def state(*, include_gate: bool = True) -> dict[str, Any]:
         "fleet": sources.fleet_view,
         "you": sources.you_desk,
         "surfaces": sources.desktop_surfaces_view,
-        "claude_pads": sources.claude_pads_view,
         "claims": sources.claims_board,
-        "board": sources.board,
     }
+    if include_board:
+        jobs["board"] = sources.board
     if include_gate:
         jobs["gate"] = sources.estate_gate
+    if include_pads:
+        jobs["claude_pads"] = sources.claude_pads_view
     out: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=max(len(jobs), 1)) as pool:
         futs = {key: pool.submit(_reading, fn) for key, fn in jobs.items()}
@@ -129,24 +159,20 @@ def state(*, include_gate: bool = True) -> dict[str, Any]:
             "GET /v1/gate",
             "deferred so the desk paints first",
         ).to_dict()
-    fleet_ok = bool(out["fleet"].get("ok"))
-    board_ok = bool(out["board"].get("ok"))
-    if not fleet_ok and not board_ok:
-        out["pickup"] = sources.Reading.unreachable(
-            "fleet+board",
-            "pickup needs fleet or board; both unread",
+    if not include_board:
+        out["board"] = sources.Reading.unreachable(
+            "GET /v1/board",
+            "deferred so the desk paints first",
         ).to_dict()
-    else:
-        out["pickup"] = sources.Reading(
-            ok=True,
-            data=sources.pickup_tray(
-                out["fleet"].get("data") if fleet_ok else {},
-                out["board"].get("data") if board_ok else {},
-            ),
-            source="fleet+board",
+    if not include_pads:
+        out["claude_pads"] = sources.Reading.unreachable(
+            "GET /v1/pads",
+            "deferred so the desk paints first",
         ).to_dict()
+    out["pickup"] = sources.pickup_from_readings(out["fleet"], out["board"]).to_dict()
     out["crew_converse"] = sources.crew_base()
     out["contract"] = sources.agent_contract()
+    out["coordinate"] = sources.coordinate_from_readings(out).to_dict()
     out["launchers"] = [
         {"name": launcher.name, "blurb": launcher.blurb, "cwd": launcher.cwd}
         for launcher in sources.LAUNCHERS
@@ -156,8 +182,8 @@ def state(*, include_gate: bool = True) -> dict[str, Any]:
 
 @router.get("/v1/state")
 def v1_state() -> dict[str, Any]:
-    """Desk JSON without the estate gate. Gate is GET /v1/gate."""
-    blob = state(include_gate=False)
+    """Desk JSON without the estate gate or gh board. Those are GET /v1/gate and GET /v1/board."""
+    blob = state(include_gate=False, include_board=False, include_pads=False)
     blob["display_only"] = True
     return blob
 
@@ -169,6 +195,20 @@ def v1_gate() -> dict[str, Any]:
     return {
         "ok": reading.ok,
         "display_only": True,
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/board")
+def v1_board() -> dict[str, Any]:
+    """Open GitHub issues. Display only. Hung gh is named unread, not a 60s wait."""
+    reading = sources.board()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "assign_owner": "GitHub Issues + CLAIMS.json",
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
@@ -203,35 +243,53 @@ def v1_fleet() -> dict[str, Any]:
     }
 
 
+@router.get("/v1/pads")
+def v1_pads() -> dict[str, Any]:
+    """Live Claude pads on this PC. Display only. Does not start Claude (R-0015)."""
+    reading = sources.claude_pads_view()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
 @router.get("/constructor", include_in_schema=False)
 def constructor_redirect() -> RedirectResponse:
     return RedirectResponse(url="/constructor/", status_code=307)
 
 
-@router.get("/constructor/", response_class=FileResponse)
-def constructor_index() -> FileResponse:
+@router.get("/constructor/", response_model=None)
+def constructor_index() -> FileResponse | HTMLResponse:
     """Launch Constructor sketch. Chat compiles locally. Live run stays Cortex :8010."""
-    return FileResponse(_constructor_file("index.html"))
+    path = _constructor_file("index.html")
+    if path is None:
+        return _constructor_unread()
+    return FileResponse(path)
 
 
-@router.get("/constructor/{name}", response_class=FileResponse)
-def constructor_asset(name: str) -> FileResponse:
-    return FileResponse(_constructor_file(name))
+@router.get("/constructor/{name}", response_model=None)
+def constructor_asset(name: str) -> FileResponse | HTMLResponse:
+    path = _constructor_file(name)
+    if path is None:
+        return _constructor_unread()
+    return FileResponse(path)
 
 
 @router.get("/v1/pickup")
 def v1_pickup() -> dict[str, Any]:
-    """Unseated CLAIMS plus open GitHub issues. Display only. Control does not assign."""
-    blob = state(include_gate=False)
-    pickup = blob.get("pickup") or {}
+    """CLAIMS unseated tray. Board only if gh is quick. Display only. Does not assign."""
+    reading = sources.pickup_view()
     return {
-        "ok": bool(pickup.get("ok")),
+        "ok": bool(reading.ok),
         "display_only": True,
         "assign_owner": "GitHub Issues + CLAIMS.json",
         "run_owner": "Cortex",
-        "source": pickup.get("source"),
-        "detail": pickup.get("detail"),
-        "data": pickup.get("data"),
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
     }
 
 
@@ -254,9 +312,61 @@ def v1_contract() -> dict[str, Any]:
     return sources.agent_contract()
 
 
+@router.get("/v1/skills")
+def v1_skills(q: str = Query("", max_length=120), limit: int = Query(8, ge=1, le=20)) -> dict[str, Any]:
+    """Proxy Netie-KB search. Display only. Control does not run a skill."""
+    if not (q or "").strip():
+        return {
+            "ok": False,
+            "display_only": True,
+            "owner": "Netie-KB",
+            "source": sources.kb_base() + "/search",
+            "detail": "empty query",
+            "data": {},
+        }
+    reading = sources.kb_search(q, limit=limit)
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "owner": "Netie-KB",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/skill/{sid}")
+def v1_skill(sid: str) -> dict[str, Any]:
+    """One registry artifact, truncated. Display only. Control does not run it."""
+    reading = sources.kb_show(sid)
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "owner": "Netie-KB",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/coordinate")
+def v1_coordinate() -> dict[str, Any]:
+    """Grok-class invoke map. Display only. Control does not invoke or spawn."""
+    reading = sources.coordinate_view()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
 @router.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    return HTMLResponse(render_page(state(include_gate=False)))
+    return HTMLResponse(render_page(state(include_gate=False, include_board=False, include_pads=False)))
 
 
 def create_app() -> FastAPI:

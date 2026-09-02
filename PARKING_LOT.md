@@ -14,6 +14,9 @@ the page. Unreachable Cortex never paints as up. Control does not query the ledg
 (ledger tip, bound session ids, refusals; no payloads). Control displays that
 window. It still will not scrape the chain for more.
 
+**2026-09-03:** Cortex + OpenVault sit in `#hero` on the first viewport, not
+inside collapsed details. Pickup/board/fleet stay the seating workbench.
+
 **Still parked:** a dedicated Cortex GET for refusal/manifest *history* beyond
 the activity window. Unlock remainder: Cortex ships that endpoint; Control
 displays it.
@@ -35,7 +38,10 @@ proxies that JSON onto the first page and at `GET /v1/belt`. Display only.
 HTML is not copied. Converse/handoff stay on Crew because NETIE.md is still
 display-and-launch (`DR-PROPOSED-control-converse.md` is not law).
 
-**Still parked:** converse rail inside Control. Unlock: NETIE.md section 3
+**2026-09-03:** Control "Crew chat" is a `target=_blank` launch to `:8020`.
+The iframe overlay is gone (F-0026). Display-and-launch holds.
+
+**Still parked:** converse rail *inside* Control. Unlock: NETIE.md section 3
 amendment merges, then chat routes to Cortex HTTP. 405s stay. Do not copy
 Crew HTML across (F-0026).
 

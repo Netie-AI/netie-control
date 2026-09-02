@@ -6,8 +6,8 @@ alwaysApply: true
 # Operator desk (this repo)
 
 Before seating, GET `http://127.0.0.1:8040/v1/contract`, then `/v1/pickup`,
-`/v1/fleet`, and `/v1/you`. Claim on the GitHub issue, then CLAIMS.json.
-Control does not assign.
+`/v1/fleet`, `/v1/you`, and `/v1/coordinate`. Claim on the GitHub issue,
+then CLAIMS.json. Control does not assign. Owners invoke.
 
 `/v1/secrets` `/v1/route` `/v1/goal` `/v1/run` stay 405. GitHub Issues are SoT.
 Converse is Crew `:8020`. HT1/HT2 stay HUMAN_STOP -- do not invent host URLs or prices.
