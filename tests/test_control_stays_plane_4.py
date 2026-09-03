@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from netie_control.app import FORBIDDEN, create_app
 from netie_control.sources import (
     CREW_BELT_WAIT_S,
+    SIDECAR_WAIT_S,
     Reading,
     loopback_get_json,
     loopback_get_status,
@@ -58,6 +59,18 @@ from netie_control.sources import (
 )
 from netie_control.sources import (
     openvault_view as _REAL_OPENVAULT,
+)
+from netie_control.sources import (
+    sidecar_fetch_view as _REAL_SIDECAR_FETCH,
+)
+from netie_control.sources import (
+    sidecar_plans_view as _REAL_SIDECAR_PLANS,
+)
+from netie_control.sources import (
+    sidecar_prompts_view as _REAL_SIDECAR_PROMPTS,
+)
+from netie_control.sources import (
+    sidecar_view as _REAL_SIDECAR,
 )
 
 
@@ -129,6 +142,30 @@ def _quiet_peer_probes(monkeypatch: pytest.MonkeyPatch) -> None:
         sources,
         "desktop_surfaces_view",
         lambda: Reading.unreachable("tasklist", "test: no live surfaces"),
+    )
+    monkeypatch.setattr(
+        sources,
+        "sidecar_view",
+        lambda: Reading.unreachable("http://127.0.0.1:8023/health", "test: no live sidecar"),
+    )
+    monkeypatch.setattr(
+        sources,
+        "sidecar_plans_view",
+        lambda: Reading.unreachable("http://127.0.0.1:8023/v1/plans", "test: no live sidecar plans"),
+    )
+    monkeypatch.setattr(
+        sources,
+        "sidecar_prompts_view",
+        lambda: Reading.unreachable(
+            "http://127.0.0.1:8023/v1/prompts", "test: no live sidecar prompts"
+        ),
+    )
+    monkeypatch.setattr(
+        sources,
+        "sidecar_fetch_view",
+        lambda q="": Reading.unreachable(
+            "http://127.0.0.1:8023/v1/fetch", "test: no live sidecar fetch"
+        ),
     )
     monkeypatch.setattr(
         sources,
@@ -218,7 +255,7 @@ def test_no_launcher_touches_the_founders_desktop_software() -> None:
     """R-0015. Grok Bot, Cursor and every user-facing app open by the founder's hand."""
     from netie_control.sources import LAUNCHERS
 
-    banned = ("grok", "cursor", "chrome.exe", "code.exe", "explorer.exe", "taskkill")
+    banned = ("grok", "cursor", "chrome.exe", "code.exe", "explorer.exe", "taskkill", "3100", "paperclip")
     offenders = [
         f"{launcher.name}: {' '.join(launcher.argv)}"
         for launcher in LAUNCHERS
@@ -245,13 +282,24 @@ def test_crew_chat_is_a_launch_not_an_iframe(client: TestClient) -> None:
 
 
 def test_launcher_lanes_are_declared_not_executed(client: TestClient) -> None:
-    """P-CTL-2. No principal, so the desk names cwd and does not run the CLI."""
+    """P-CTL-2. No principal, so the desk names cwd and argv and does not run the CLI."""
     page = client.get("/").text
     assert "Local CLI lanes" in page
     assert "P-CTL-2" in page
     assert "does not execute" in page
     assert "estate-gate" in page
+    assert "estate_gate.py" in page
+    assert "GET /v1/launchers" in page
     assert "<form" not in page.lower()
+    body = client.get("/v1/launchers").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["data"]["executes"] is False
+    assert body["data"]["parked"] == "P-CTL-2"
+    names = [row["name"] for row in body["data"]["items"]]
+    assert "estate-gate" in names
+    assert all(row.get("executes") is False for row in body["data"]["items"])
+    assert client.post("/v1/launchers", json={"run": "estate-gate"}).status_code != 200
     assert client.post("/v1/run", json={"launch": "estate-gate"}).status_code == 405
 
 
@@ -1689,6 +1737,8 @@ def test_strip_unread_is_warn_not_quiet_question(client: TestClient) -> None:
     assert 'id="stripPads">unread</b>' in page
     assert ">unread</b><span>claude pads</span>" in page
     assert ">unread</b><span>this PC live</span>" in page
+    assert 'id="stripSidecar">unread</b>' in page
+    assert ">unread</b><span>sidecar</span>" in page
     assert '<span class="count">unread</span>' in page
     assert '<span class="count">?</span>' not in page
     assert 'length : "unread"' in page
@@ -1715,6 +1765,13 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["desk"]["cortex_wait_s"] == 1.5
     assert body["desk"]["crew_belt_wait_s"] == 1.5
     assert body["desk"]["openvault_usage_wait_s"] == 1.5
+    assert body["desk"]["sidecar_wait_s"] == 1.5
+    assert body["desk"]["sidecar_probe"] == "/health"
+    assert "/v1/plans" in body["desk"]["display_gets"]
+    assert "/v1/prompts" in body["desk"]["display_gets"]
+    assert "/v1/fetch" in body["desk"]["display_gets"]
+    assert "/v1/sidecar" in body["desk"]["display_gets"]
+    assert "/v1/launchers" in body["desk"]["display_gets"]
     page = client.get("/").text
     assert 'class="howto"' in page
     assert "Every agent" in page
@@ -1729,6 +1786,8 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert "cortex_wait_s=1.5" in page
     assert "crew_belt_wait_s=1.5" in page
     assert "openvault_usage_wait_s=1.5" in page
+    assert "sidecar_wait_s=1.5" in page
+    assert "sidecar_probe=/health" in page
     assert "<code>/v1/coordinate</code>" in page
     assert client.post("/v1/contract", json={"assign": "me"}).status_code != 200
     assert client.post("/v1/run").status_code == 405
@@ -1751,6 +1810,9 @@ def test_v1_coordinate_is_display_only_and_does_not_invoke(client: TestClient) -
     assert "does not spawn" in by_id["spawn"]["do_not"]
     assert by_id["talk"]["live"] is False
     assert by_id["talk"]["href"] == "http://127.0.0.1:8020"
+    assert by_id["sidecar"]["live"] is False
+    assert by_id["sidecar"]["href"] == "/v1/sidecar"
+    assert "do not rebind :8020" in by_id["sidecar"]["do_not"]
     assert by_id["crew-bind"]["live"] is False
     assert "must not start or kill" in by_id["crew-bind"]["do_not"]
     assert by_id["crew-bind"]["href"] == "/v1/you"
@@ -2340,4 +2402,306 @@ def test_v1_coordinate_talk_and_cortex_do_not_stack(
     assert client.post("/v1/secrets").status_code == 405
     assert client.post("/v1/route").status_code == 405
     assert client.post("/v1/goal").status_code == 405
+
+
+def test_forbidden_set_is_exactly_the_four_405s() -> None:
+    """Do not add a run/goal/route/secrets write path. Do not swallow a 405 into 404."""
+    assert set(FORBIDDEN) == {"/v1/secrets", "/v1/route", "/v1/goal", "/v1/run"}
+
+
+def test_display_gets_stay_get_and_do_not_run(
+    client: TestClient,
+) -> None:
+    """TAS-CONTROL GET surfaces. POST is not a write path. Four 405s unchanged."""
+    for path in ("/v1/plans", "/v1/prompts", "/v1/fetch", "/v1/sidecar", "/v1/launchers"):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        body = resp.json()
+        assert body["display_only"] is True, path
+        assert client.post(path, json={"run": True}).status_code != 200, path
+    assert client.get("/v1/plans").json()["ok"] is False
+    assert client.get("/v1/prompts").json()["ok"] is False
+    fetch = client.get("/v1/fetch").json()
+    assert fetch["ok"] is False
+    sidecar = client.get("/v1/sidecar").json()
+    assert sidecar["ok"] is False
+    assert "8023" in (sidecar.get("source") or "")
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/goal").status_code == 405
+    assert client.post("/v1/route").status_code == 405
+    assert client.post("/v1/secrets").status_code == 405
+    page = client.get("/").text
+    assert "fetch(\"/v1/plans\")" in page
+    assert "fetch(\"/v1/prompts\")" in page
+    assert "GET /v1/sidecar" in page
+    assert "sidecar :8023" in page.lower()
+    assert "3100" not in page
+    assert "<iframe" not in page.lower()
+    assert "<form" not in page.lower()
+
+
+def test_index_does_not_run_sidecar_catalogs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET / paints sidecar health. Plans/prompts/fetch stay live hops."""
+    from netie_control import sources
+
+    def boom_plans() -> None:
+        raise AssertionError("GET / must not run sidecar_plans_view")
+
+    def boom_prompts() -> None:
+        raise AssertionError("GET / must not run sidecar_prompts_view")
+
+    def boom_fetch(q: str = "") -> None:
+        raise AssertionError("GET / must not run sidecar_fetch_view")
+
+    monkeypatch.setattr(sources, "sidecar_plans_view", boom_plans)
+    monkeypatch.setattr(sources, "sidecar_prompts_view", boom_prompts)
+    monkeypatch.setattr(sources, "sidecar_fetch_view", boom_fetch)
+    page = client.get("/").text
+    assert "GET /v1/plans" in page
+    assert "GET /v1/prompts" in page
+    assert "GET /v1/fetch" in page
+    assert "test: no live sidecar" in page
+    assert "Plans unread. GET /v1/plans." in page
+    assert "Prompts unread. GET /v1/prompts." in page
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_sidecar_view_needs_json_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTML GET / on the sidecar must not paint live. Same class as hung :8020."""
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        if url.endswith("/health") or url.endswith("/healthz"):
+            return Reading.unreachable(url, "not JSON: HTML")
+        raise AssertionError(f"sidecar_view must not probe {url}")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    reading = _REAL_SIDECAR()
+    assert reading.ok is False
+    assert str(reading.source).endswith("/health")
+
+
+def test_sidecar_view_health_and_healthz_are_parallel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    seen: list[float] = []
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        seen.append(timeout)
+        time.sleep(0.25)
+        return Reading.unreachable(url, "hung sidecar")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    t0 = time.perf_counter()
+    reading = _REAL_SIDECAR()
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 0.45
+    assert seen
+    assert all(t == SIDECAR_WAIT_S for t in seen)
+    assert SIDECAR_WAIT_S <= 1.5
+    assert reading.ok is False
+
+
+def test_sidecar_up_does_not_green_crew_bind(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "sidecar_view",
+        lambda: Reading(
+            ok=True,
+            source="http://127.0.0.1:8023/health",
+            data={"up": True, "status": "ok", "service": "sidecar"},
+        ),
+    )
+    page = client.get("/").text
+    assert "Sidecar health ok" in page
+    assert "Control did not start it" in page
+    assert 'id="stripSidecar">up</b>' in page
+    body = client.get("/v1/coordinate").json()
+    lanes = {row["id"]: row for row in (body.get("data") or {}).get("lanes") or []}
+    assert lanes["sidecar"]["live"] is True
+    assert lanes["crew-bind"]["live"] is False
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/goal").status_code == 405
+
+
+def test_v1_plans_slims_and_does_not_run(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "sidecar_plans_view", _REAL_SIDECAR_PLANS)
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        assert url.endswith("/v1/plans")
+        return Reading(
+            ok=True,
+            source=url,
+            data={
+                "items": [
+                    {
+                        "id": "p1",
+                        "title": "gate",
+                        "status": "open",
+                        "owner": "Cortex",
+                        "kind": "plan",
+                        "prompt": "must not copy",
+                        "skill_body": "secret steps",
+                        "html": "<form>composer</form>",
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    body = client.get("/v1/plans").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    row = body["data"]["items"][0]
+    assert row["id"] == "p1"
+    blob = json.dumps(body)
+    assert "must not copy" not in blob
+    assert "secret steps" not in blob
+    assert "<form" not in blob
+    assert "composer" not in blob
+    assert client.post("/v1/plans", json={"run": "p1"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_v1_prompts_drop_bodies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "sidecar_prompts_view", _REAL_SIDECAR_PROMPTS)
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        assert url.endswith("/v1/prompts")
+        return Reading(
+            ok=True,
+            source=url,
+            data={
+                "prompts": [
+                    {
+                        "id": "pr1",
+                        "title": "seat",
+                        "kind": "prompt",
+                        "source": "kb",
+                        "body": "full prompt text",
+                        "skill_body": "do not copy",
+                        "html": "<html>crew composer</html>",
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    body = client.get("/v1/prompts").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    row = body["data"]["items"][0]
+    assert row["id"] == "pr1"
+    assert row["title"] == "seat"
+    blob = json.dumps(body)
+    assert "full prompt text" not in blob
+    assert "do not copy" not in blob
+    assert "composer" not in blob
+    assert client.post("/v1/prompts", json={"run": "pr1"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_v1_fetch_is_loopback_sidecar_not_an_open_proxy(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "sidecar_fetch_view", _REAL_SIDECAR_FETCH)
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        assert "127.0.0.1:8023/v1/fetch" in url
+        assert "q=fleet" in url
+        return Reading(
+            ok=True,
+            source=url,
+            data={
+                "hits": [
+                    {
+                        "id": "h1",
+                        "title": "fleet",
+                        "kind": "skill",
+                        "source": "kb",
+                        "status": "ok",
+                        "body": "must not copy",
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    empty = client.get("/v1/fetch").json()
+    assert empty["ok"] is False
+    assert "empty query" in (empty.get("detail") or "")
+    body = client.get("/v1/fetch", params={"q": "fleet"}).json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["data"]["items"][0]["id"] == "h1"
+    blob = json.dumps(body)
+    assert "must not copy" not in blob
+    off = loopback_get_json("https://example.com/v1/fetch?q=x")
+    assert off.ok is False
+    assert "loopback" in off.detail.lower()
+    assert client.post("/v1/fetch", json={"url": "https://example.com"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/secrets").status_code == 405
+
+
+def test_v1_plans_fail_closes_hung_sidecar(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "sidecar_plans_view", _REAL_SIDECAR_PLANS)
+    seen: dict[str, float] = {}
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        seen["timeout"] = timeout
+        return Reading.unreachable(url, "hung sidecar plans")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    t0 = time.perf_counter()
+    body = client.get("/v1/plans").json()
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 1.5
+    assert seen["timeout"] == SIDECAR_WAIT_S
+    assert body["ok"] is False
+    assert body["display_only"] is True
+    assert client.post("/v1/plans", json={"run": True}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_no_paperclip_clone_and_no_crew_composer() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "paperclip").exists()
+    assert not (root / "mypaperclip").exists()
+    app = (root / "netie_control" / "app.py").read_text(encoding="utf-8")
+    assert "/v1/plans" in app
+    assert "/v1/prompts" in app
+    assert "/v1/fetch" in app
+    assert "/v1/sidecar" in app
+    assert "plane: 4" in app or "plane 4" in app.lower()
+    render = (root / "netie_control" / "render.py").read_text(encoding="utf-8")
+    assert "<iframe" not in render.lower()
+    assert "crewIframe" not in render
+    status = (root / "STATUS.md").read_text(encoding="utf-8")
+    assert "not Paperclip React" in status
+    parking = (root / "PARKING_LOT.md").read_text(encoding="utf-8")
+    assert "P-CTL-2" in parking
+    assert "Unlock:" in parking
 

@@ -25,8 +25,8 @@ python -m pytest E:\NetieControl\tests -q
 | Chrome | Rail + inspector + kanban. Unread live-dot is warn, not mint. Strip unread is not `?`. Guaca/Rakazo tokens. Not Plane source, not Paperclip React |
 | YOU desk | Numbered HITL with GitHub URLs. HT1/HT2 HUMAN_STOP. Step 8: founder binds live `:8020` to engine Crew. No invented prices or host URLs. `GET /v1/you` |
 | Pickup tray | Unseated CLAIMS first. Board overlay 1.5s. Live issues stay `GET /v1/board`. Display only |
-| Coordinate map | Numbered invoke lanes. `crew-bind` never green. Poll names chips unread; does not idle-wipe SSR workers. Talk = `/crew/wakes` in the peer pool (named source is wakes). GET `/` talk+health one pool. Pads live hop is `GET /v1/pads`. Live hops throw on HTTP error so FastAPI 404 cannot paint as a reading. Panel counts unread not ?. No spawn |
-| Agent contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/coordinate`. Desk names crew_belt and openvault waits. No assign POST |
+| Coordinate map | Numbered invoke lanes. `crew-bind` never green. Sidecar `:8023` is a display lane (JSON `/health`, not HTML GET `/`). Poll names chips unread; does not idle-wipe SSR workers. Talk = `/crew/wakes` in the peer pool (named source is wakes). GET `/` talk+health one pool. Pads live hop is `GET /v1/pads`. Plans/prompts/fetch are live hops. Live hops throw on HTTP error so FastAPI 404 cannot paint as a reading. Panel counts unread not ?. No spawn |
+| Agent contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/coordinate`. Desk names crew_belt, openvault, and sidecar waits. Display GETs: plans, prompts, fetch, sidecar, launchers. No assign POST |
 | Estate gate | Desk paints first (`GET /v1/gate not yet`, not checking). Live verdict is `GET /v1/gate`. Banner stays UNKNOWN until then |
 | Gh board | Desk paints first. Live issues are `GET /v1/board` (4s). Hung gh named unread. Pickup overlay 1.5s. Favicon 204 |
 | Cortex governance | Displays `activity.governance` window (refusals, bound session ids). No ledger scrape |
@@ -40,7 +40,7 @@ python -m pytest E:\NetieControl\tests -q
 | **NEEDS-YOU** | Bind live `:8020` to `python -m CortexOS.crew` from `E:\Cortex`. Agents must not start or kill that process (R-0015). Disk YOU step 8 + coordinate `crew-bind` (`live` false) + strip crew-belt cell. Live `:8040` still has 7 YOU steps, 10 coordinate lanes, no strip cell until this process is reloaded. |
 | **NEEDS-YOU** | Point **work.netie.ai** at this box (tunnel / Access), then `/healthz` |
 | **NEEDS-YOU** | Answer **F36** (extract vs live federation) and **F45** (insights epic). Both park finished, green dms branches. YOU steps 2 and 3 link them |
-| Not built | Launchers unwired (P-CTL-2: desk names cwd, does not execute) |
+| Not built | Launchers unwired (P-CTL-2: desk names cwd and argv, does not execute). GET `/v1/launchers` is display. |
 | Charter | Crew converse inside Control still needs NETIE.md display-launch-converse (DR-PROPOSED). Toolbar launches `:8020` in a new tab. No iframe. Belt display is shipped |
 
 ## What this does NOT claim

@@ -142,6 +142,7 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
         "you": sources.you_desk,
         "surfaces": sources.desktop_surfaces_view,
         "claims": sources.claims_board,
+        "sidecar": sources.sidecar_view,
     }
     if include_board:
         jobs["board"] = sources.board
@@ -169,12 +170,30 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
             "GET /v1/pads",
             "deferred so the desk paints first",
         ).to_dict()
+    out["plans"] = sources.Reading.unreachable(
+        "GET /v1/plans",
+        "deferred so the desk paints first",
+    ).to_dict()
+    out["prompts"] = sources.Reading.unreachable(
+        "GET /v1/prompts",
+        "deferred so the desk paints first",
+    ).to_dict()
+    out["fetch"] = sources.Reading.unreachable(
+        "GET /v1/fetch",
+        "deferred so the desk paints first",
+    ).to_dict()
     out["pickup"] = sources.pickup_from_readings(out["fleet"], out["board"]).to_dict()
     out["crew_converse"] = sources.crew_base()
     out["contract"] = sources.agent_contract()
     out["coordinate"] = sources.coordinate_from_readings(out).to_dict()
     out["launchers"] = [
-        {"name": launcher.name, "blurb": launcher.blurb, "cwd": launcher.cwd}
+        {
+            "name": launcher.name,
+            "blurb": launcher.blurb,
+            "cwd": launcher.cwd,
+            "argv": list(launcher.argv),
+            "executes": False,
+        }
         for launcher in sources.LAUNCHERS
     ]
     return out
@@ -362,6 +381,69 @@ def v1_coordinate() -> dict[str, Any]:
         "detail": reading.detail,
         "data": reading.data,
     }
+
+
+def _display_get(reading: sources.Reading, **extra: Any) -> dict[str, Any]:
+    blob: dict[str, Any] = {
+        "ok": reading.ok,
+        "display_only": True,
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+    blob.update(extra)
+    return blob
+
+
+@router.get("/v1/sidecar")
+def v1_sidecar() -> dict[str, Any]:
+    """Sidecar :8023 health. Display only. Control does not start or bind it."""
+    return _display_get(
+        sources.sidecar_view(),
+        owner="Crew sidecar :8023",
+        run_owner="Cortex",
+    )
+
+
+@router.get("/v1/plans")
+def v1_plans() -> dict[str, Any]:
+    """Sidecar GET /v1/plans. Display only. Control does not run a plan."""
+    return _display_get(
+        sources.sidecar_plans_view(),
+        owner="Crew sidecar :8023",
+        run_owner="Cortex",
+    )
+
+
+@router.get("/v1/prompts")
+def v1_prompts() -> dict[str, Any]:
+    """Sidecar GET /v1/prompts. Ids/titles only. Bodies refuse. Display only."""
+    return _display_get(
+        sources.sidecar_prompts_view(),
+        owner="Crew sidecar :8023",
+        run_owner="Cortex",
+    )
+
+
+@router.get("/v1/fetch")
+def v1_fetch(q: str = Query("", max_length=120)) -> dict[str, Any]:
+    """Sidecar GET /v1/fetch. Loopback only. Not an open proxy. Display only."""
+    return _display_get(
+        sources.sidecar_fetch_view(q),
+        owner="Crew sidecar :8023",
+        run_owner="Cortex",
+    )
+
+
+@router.get("/v1/launchers")
+def v1_launchers() -> dict[str, Any]:
+    """Declared local CLI lanes. Display only. P-CTL-2 does not execute them."""
+    return _display_get(
+        sources.launchers_view(),
+        owner="Netie Control",
+        run_owner="Cortex",
+        parked="P-CTL-2",
+    )
 
 
 @router.get("/", response_class=HTMLResponse)
