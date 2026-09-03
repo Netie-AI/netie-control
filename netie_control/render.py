@@ -1681,11 +1681,6 @@ the founder's desktop software (R-0015).</p></div>
     if (body) body.innerHTML = html;
     setCount(id, n);
   }}
-  function hopUnread(id, path) {{
-    var body = document.getElementById(id + "Body");
-    if (body) body.innerHTML = '<p class="absent">' + id.charAt(0).toUpperCase()
-      + id.slice(1) + " unread. GET " + path + ".</p>";
-  }}
   function idRowsHtml(b, empty, lead, cols) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
@@ -1707,21 +1702,30 @@ the founder's desktop software (R-0015).</p></div>
       "Sidecar GET /v1/plans (ids/titles). Control does not run a plan. POST /v1/run stays 405. Not a paperclip clone.",
       ["id", "title", "status", "owner", "kind"]),
       (b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
-  }}).catch(function () {{ hopUnread("plans", "/v1/plans"); }});
+  }}).catch(function () {{
+    var body = document.getElementById("plansBody");
+    if (body) body.innerHTML = '<p class="absent">Plans unread. GET /v1/plans.</p>';
+  }});
   fetch("/v1/prompts").then(readingJson).then(function (b) {{
     fillHop("prompts", idRowsHtml(b,
       "prompts none. Bodies refuse (TAS-CONTROL). Control does not copy Crew composer.",
       "Sidecar GET /v1/prompts. Ids/titles only. Prompt and skill_body refuse. Control does not copy Crew composer.",
       ["id", "title", "kind", "source"]),
       (b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
-  }}).catch(function () {{ hopUnread("prompts", "/v1/prompts"); }});
+  }}).catch(function () {{
+    var body = document.getElementById("promptsBody");
+    if (body) body.innerHTML = '<p class="absent">Prompts unread. GET /v1/prompts.</p>';
+  }});
   fetch("/v1/fetch").then(readingJson).then(function (b) {{
     fillHop("fetch", idRowsHtml(b,
       "fetch none. Empty query or sidecar unread. Not an open proxy.",
       "Sidecar GET /v1/fetch. Loopback only. Not an open proxy. Bodies refuse. Control does not run the hit.",
       ["id", "title", "kind", "source", "status"]),
       (b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
-  }}).catch(function () {{ hopUnread("fetch", "/v1/fetch"); }});
+  }}).catch(function () {{
+    var body = document.getElementById("fetchBody");
+    if (body) body.innerHTML = '<p class="absent">Fetch unread. GET /v1/fetch.</p>';
+  }});
   function tickCoordinate() {{
     fetch("/v1/coordinate").then(readingJson).then(function (b) {{
       var d = (b && b.ok && b.data) ? b.data : null;

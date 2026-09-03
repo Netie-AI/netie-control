@@ -1203,6 +1203,8 @@ def _win_running_images(wanted: set[str]) -> set[str]:
     """Lowercase exe names from wanted that are running. Never starts them."""
     if not wanted:
         return set()
+    if not hasattr(ctypes, "WinDLL"):
+        raise OSError("process snapshot is Windows-only")
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
     kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE

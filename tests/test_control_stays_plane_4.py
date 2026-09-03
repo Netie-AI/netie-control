@@ -2182,6 +2182,18 @@ def test_desktop_surfaces_snapshot_failure_is_unread_not_green(monkeypatch) -> N
     assert "unreachable" in (reading.detail or "")
 
 
+def test_desktop_surfaces_non_windows_is_unread_not_a_500() -> None:
+    """Linux GET / must name This PC unread, not 500 on ctypes.WinDLL (R-0011)."""
+    import sys
+
+    if sys.platform.startswith("win"):
+        pytest.skip("Windows snapshot is the live path")
+    reading = _REAL_DESKTOP_SURFACES()
+    assert reading.ok is False
+    assert "unreachable" in (reading.detail or "")
+    assert reading.data is None
+
+
 def test_claude_pads_missing_cli_is_unread_not_invented(monkeypatch) -> None:
     from netie_control import sources
 
@@ -2473,7 +2485,7 @@ def test_sidecar_view_needs_json_health(monkeypatch: pytest.MonkeyPatch) -> None
     from netie_control import sources
 
     def fake(url: str, timeout: float = 2.0) -> Reading:
-        if url.endswith("/health") or url.endswith("/healthz"):
+        if url.endswith(("/health", "/healthz")):
             return Reading.unreachable(url, "not JSON: HTML")
         raise AssertionError(f"sidecar_view must not probe {url}")
 
