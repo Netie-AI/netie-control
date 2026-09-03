@@ -1,12 +1,3 @@
-## 2026-09-03 - Sidecar GET surfaces stay GET
-
-`GET /v1/sidecar` probes engine host `:8023` JSON `/health` (HTML GET `/` is
-not enough). `GET /v1/plans` `/v1/prompts` `/v1/fetch` proxy that sidecar and
-drop prompt bodies. `GET /v1/launchers` lists cwd and argv. Click still does
-nothing (P-CTL-2). POST `/v1/run` `/v1/goal` `/v1/route` `/v1/secrets` stay
-405. No paperclip clone. No Crew composer. crew-bind never green. Non-Windows
-This-PC snapshot is unread, not a 500.
-
 ## 2026-09-03 - GET /v1/state stays display-only
 
 Desk JSON skips gate, gh board, and pads. POST is not 200. Four 405s

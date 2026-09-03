@@ -26,9 +26,6 @@ displays it.
 
 They are declared and rendered; clicking one does nothing.
 
-**2026-09-03:** `GET /v1/launchers` lists name, cwd, and argv. The desk shows
-the argv as copy-only. Click still does nothing. POST `/v1/run` stays 405.
-
 **Unlock:** an answer to who may launch. Under DR-0004 Option A there is no
 authentication anywhere in the estate, so a wired launcher is remote code execution for
 anyone who can reach the port. Wire them when Control has a principal, or bind to
