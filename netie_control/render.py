@@ -508,6 +508,33 @@ def _crew_belt_body(d: Any) -> str:
             + _esc("; ".join(str(x) for x in unreachable))
             + "</p>"
         )
+    owner = str(d.get("assign_owner") or "").strip()
+    if owner:
+        bits.append(
+            f"<p>assign_owner <code>{_esc(owner)}</code>. Control does not assign.</p>"
+        )
+    assigns = d.get("assignments") or []
+    if assigns:
+        bits.append(
+            "<p>Crew local assignments (display). Control does not assign.</p>"
+            "<table><tr><th>spec</th><th>agent</th><th>title</th></tr>"
+        )
+        for row in assigns[:20]:
+            if not isinstance(row, dict):
+                continue
+            bits.append(
+                "<tr>"
+                f"<td>{_esc(row.get('spec'))}</td>"
+                f"<td>{_esc(row.get('agent'))}</td>"
+                f"<td>{_esc(row.get('title'))}</td>"
+                "</tr>"
+            )
+        bits.append("</table>")
+    else:
+        bits.append(
+            '<p class="absent">assignments none. Crew /assign binds a teammate. '
+            "Control does not assign.</p>"
+        )
     hands = d.get("handoffs") or []
     if hands:
         bits.append("<p>handoffs</p><ul>")
