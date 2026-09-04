@@ -761,6 +761,17 @@ def test_crew_belt_panel_renders_json_display_only(
                 "confirms": [{"id": "c1"}],
                 "spaces": [{"id": "s1"}],
                 "agents": [{"id": "a1", "name": "Scout"}],
+                "assign_owner": (
+                    "Crew /assign (local bind). CLAIMS seating is Ticket Runner. "
+                    "Control does not assign."
+                ),
+                "assignments": [
+                    {
+                        "spec": "Netie-AI/Cortex#164",
+                        "agent": "Scout",
+                        "title": "fetch hud",
+                    }
+                ],
             },
         ),
     )
@@ -780,6 +791,10 @@ def test_crew_belt_panel_renders_json_display_only(
     assert "<form" not in page.lower()
     assert "Crew surface" in page
     assert "http://127.0.0.1:8020" in page
+    assert "Netie-AI/Cortex#164" in page
+    assert "Scout" in page
+    assert "Control does not assign" in page
+    assert client.post("/v1/belt", json={"assign": "me"}).status_code != 200
 
 
 def test_crew_belt_idle_is_named_not_silent(
@@ -807,6 +822,8 @@ def test_crew_belt_idle_is_named_not_silent(
     page = client.get("/").text
     assert "wakes none" in page
     assert "queue none" in page
+    assert "assignments none" in page
+    assert "Control does not assign" in page
     assert "HITL pending=0" in page
     assert "does not POST wakes" in page
     assert client.post("/v1/belt", json={"wake": "x"}).status_code != 200

@@ -1,3 +1,8 @@
+## 2026-09-04 - Crew assignments on the conveyor
+
+GET `/` paints Crew `assignments` from belt JSON. Empty is named none.
+Control still does not assign. POST `/v1/run` stays 405.
+
 ## 2026-09-03 - GET /v1/state stays display-only
 
 Desk JSON skips gate, gh board, and pads. POST is not 200. Four 405s
