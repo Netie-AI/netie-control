@@ -36,6 +36,10 @@ PICKUP_BOARD_WAIT_S = 1.5
 BOARD_WAIT_S = 4.0
 KB_WAIT_S = 1.5
 CORTEX_WAIT_S = 1.5
+SIDECAR_WAIT_S = 1.5
+PLAN_ROW_KEYS = ("id", "title", "status", "owner", "kind")
+PROMPT_ROW_KEYS = ("id", "title", "kind", "source")
+FETCH_ROW_KEYS = ("id", "title", "kind", "source", "status")
 USAGE_SUMMARY_KEYS = (
     "requests",
     "prompt_tokens",
@@ -196,6 +200,15 @@ def agent_contract() -> dict[str, Any]:
             "cortex_wait_s": CORTEX_WAIT_S,
             "crew_belt_wait_s": CREW_BELT_WAIT_S,
             "openvault_usage_wait_s": OPENVAULT_USAGE_WAIT_S,
+            "sidecar_wait_s": SIDECAR_WAIT_S,
+            "sidecar_probe": "/health",
+            "display_gets": [
+                "/v1/plans",
+                "/v1/prompts",
+                "/v1/fetch",
+                "/v1/sidecar",
+                "/v1/launchers",
+            ],
         },
         "rule": (
             "Every lane (Cursor, Claude Code, Grok Bot) reads Control before seating. "
@@ -207,6 +220,11 @@ def agent_contract() -> dict[str, Any]:
 
 def kb_base() -> str:
     return os.environ.get("NETIE_KB_URL", "http://127.0.0.1:8030").rstrip("/")
+
+
+def sidecar_base() -> str:
+    """Engine sidecar host. Not Crew HTML :8020. Not paperclip :3100."""
+    return os.environ.get("NETIE_SIDECAR_URL", "http://127.0.0.1:8023").rstrip("/")
 
 
 def cortex_view() -> Reading:
@@ -401,6 +419,110 @@ def crew_talk_view() -> Reading:
         why = raw.detail or "wakes unread"
         return Reading.unreachable(wakes, why)
     return Reading(ok=True, data={"up": True, "wakes": True}, source=wakes)
+
+
+def _slim_rows(payload: Any, keys: tuple[str, ...], *list_keys: str) -> list[dict[str, Any]]:
+    """Ids/titles only. Prompt, skill_body, html, and transcript never travel."""
+    items: Any = payload
+    if isinstance(payload, dict):
+        items = []
+        for key in list_keys:
+            cand = payload.get(key)
+            if isinstance(cand, list):
+                items = cand
+                break
+    if not isinstance(items, list):
+        return []
+    slim: list[dict[str, Any]] = []
+    for row in items[:40]:
+        if not isinstance(row, dict):
+            continue
+        slim.append({key: row.get(key) for key in keys if key in row})
+    return slim
+
+
+def slim_sidecar_health(payload: dict[str, Any]) -> dict[str, Any]:
+    """Liveness only. Drop HTML, tool catalogs, and any token-shaped fields."""
+    status = payload.get("status")
+    ok = payload.get("ok")
+    up = status in ("ok", "healthy") or ok is True
+    return {
+        "up": up,
+        "status": status,
+        "ok": ok,
+        "service": payload.get("service"),
+    }
+
+
+def sidecar_view() -> Reading:
+    """Engine sidecar :8023 health. JSON only. HTML GET / is not enough (R-0011).
+
+    Hung Crew :8020 still serves HTML. Sidecar is the engine host. Control
+    does not start or bind it. Agents do not rebind :8020 (R-0015).
+    """
+    base = sidecar_base()
+    health = f"{base}/health"
+    healthz = f"{base}/healthz"
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="sidecar") as pool:
+        first = pool.submit(loopback_get_json, health, SIDECAR_WAIT_S)
+        second = pool.submit(loopback_get_json, healthz, SIDECAR_WAIT_S)
+        primary = first.result()
+        fallback = second.result()
+    raw = primary if primary.ok else fallback
+    if not raw.ok:
+        why = (
+            f"{primary.detail or 'unread'}; "
+            f"tried {healthz}: {fallback.detail or 'unread'}"
+        )
+        return Reading.unreachable(health, why)
+    payload = raw.data if isinstance(raw.data, dict) else {}
+    return Reading(ok=True, data=slim_sidecar_health(payload), source=raw.source)
+
+
+def sidecar_plans_view() -> Reading:
+    """Display sidecar GET /v1/plans. Control does not run a plan."""
+    url = f"{sidecar_base()}/v1/plans"
+    raw = loopback_get_json(url, timeout=SIDECAR_WAIT_S)
+    if not raw.ok:
+        return raw
+    items = _slim_rows(raw.data, PLAN_ROW_KEYS, "items", "plans")
+    return Reading(
+        ok=True,
+        data={"items": items, "count": len(items)},
+        source=url,
+    )
+
+
+def sidecar_prompts_view() -> Reading:
+    """Display sidecar GET /v1/prompts. Ids/titles only. Bodies refuse (TAS-CONTROL)."""
+    url = f"{sidecar_base()}/v1/prompts"
+    raw = loopback_get_json(url, timeout=SIDECAR_WAIT_S)
+    if not raw.ok:
+        return raw
+    items = _slim_rows(raw.data, PROMPT_ROW_KEYS, "items", "prompts")
+    return Reading(
+        ok=True,
+        data={"items": items, "count": len(items)},
+        source=url,
+    )
+
+
+def sidecar_fetch_view(q: str = "") -> Reading:
+    """Display sidecar GET /v1/fetch. Loopback only. Not an open proxy."""
+    needle = (q or "").strip()
+    url = f"{sidecar_base()}/v1/fetch"
+    if not needle:
+        return Reading.unreachable(url, "empty query")
+    url = f"{url}?q={quote(needle)}"
+    raw = loopback_get_json(url, timeout=SIDECAR_WAIT_S)
+    if not raw.ok:
+        return raw
+    items = _slim_rows(raw.data, FETCH_ROW_KEYS, "items", "hits")
+    return Reading(
+        ok=True,
+        data={"q": needle, "items": items, "count": len(items)},
+        source=url,
+    )
 
 
 def slim_crew_health(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1081,6 +1203,8 @@ def _win_running_images(wanted: set[str]) -> set[str]:
     """Lowercase exe names from wanted that are running. Never starts them."""
     if not wanted:
         return set()
+    if not hasattr(ctypes, "WinDLL"):
+        raise OSError("process snapshot is Windows-only")
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
     kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
@@ -1188,6 +1312,7 @@ def coordinate_teammates(
     crew_health: dict[str, Any],
     crew_talk: dict[str, Any],
     cortex: dict[str, Any],
+    sidecar: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Named workers the operator can actually invoke. Control does not spawn them."""
     crew = crew_base()
@@ -1294,6 +1419,18 @@ def coordinate_teammates(
             "do_not": "POST /v1/run stays 405",
         }
     )
+    sidecar = sidecar or {}
+    mates.append(
+        {
+            "id": "sidecar",
+            "name": "Sidecar :8023",
+            "kind": "sidecar",
+            "live": _reading_live(sidecar),
+            "invoke": sidecar_base(),
+            "href": "/v1/sidecar",
+            "do_not": "Control does not start :8023. Agents do not rebind :8020",
+        }
+    )
     return mates
 
 
@@ -1307,9 +1444,11 @@ def coordinate_payload(
     surfaces: dict[str, Any],
     claude_pads: dict[str, Any],
     fleet: dict[str, Any] | None = None,
+    sidecar: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Grok-class job -> owner invoke map. Display only. Control does not invoke."""
     fleet = fleet or {}
+    sidecar = sidecar or {}
     crew = crew_base()
     cortex_url = cortex_base()
     kb_url = kb_base()
@@ -1358,6 +1497,15 @@ def coordinate_payload(
             "href": crew,
             "live": _reading_live(crew_talk),
             "do_not": "Do not copy Crew composer into Control",
+        },
+        {
+            "id": "sidecar",
+            "job": "Sidecar engine host",
+            "owner": "Crew sidecar :8023",
+            "invoke": sidecar_base(),
+            "href": "/v1/sidecar",
+            "live": _reading_live(sidecar),
+            "do_not": "Control does not start :8023. Agents do not rebind :8020",
         },
         {
             "id": "crew-bind",
@@ -1433,6 +1581,7 @@ def coordinate_payload(
         crew_health=crew_health,
         crew_talk=crew_talk,
         cortex=cortex,
+        sidecar=sidecar,
     )
     workers = workers_from(cortex, crew_health)
     health_why = str(crew_health.get("detail") or "")
@@ -1455,6 +1604,7 @@ def coordinate_payload(
                 "grok": grok_on,
                 "cortex": _reading_live(cortex),
                 "crew": _reading_live(crew_talk),
+                "sidecar": _reading_live(sidecar),
             },
         },
         "note": (
@@ -1477,6 +1627,7 @@ def coordinate_from_readings(blob: dict[str, Any]) -> Reading:
             surfaces=blob.get("surfaces") or {},
             claude_pads=blob.get("claude_pads") or {},
             fleet=blob.get("fleet") or {},
+            sidecar=blob.get("sidecar") or {},
         ),
         source="peers+surfaces",
     )
@@ -1496,6 +1647,7 @@ def coordinate_view() -> Reading:
         "kb": kb_view,
         "surfaces": desktop_surfaces_view,
         "fleet": fleet_view,
+        "sidecar": sidecar_view,
     }
     blob: dict[str, Any] = {
         "crew_health": Reading.unreachable(
@@ -1658,3 +1810,28 @@ LAUNCHERS: tuple[Launcher, ...] = (
     Launcher("dms-demo-verify", ("python", r"D:\DMS\scripts\verify_demo_live.py"), r"D:\DMS",
              "Verify the DMS demo against a live stack. Needs the stack up."),
 )
+
+
+def launchers_view() -> Reading:
+    """Declared local CLI lanes. Display only. P-CTL-2 does not execute them."""
+    items = [
+        {
+            "name": launcher.name,
+            "blurb": launcher.blurb,
+            "cwd": launcher.cwd,
+            "argv": list(launcher.argv),
+            "executes": False,
+        }
+        for launcher in LAUNCHERS
+    ]
+    return Reading(
+        ok=True,
+        data={
+            "items": items,
+            "count": len(items),
+            "parked": "P-CTL-2",
+            "executes": False,
+        },
+        source="LAUNCHERS",
+        detail="Declared only. Control does not execute. P-CTL-2 has no principal.",
+    )

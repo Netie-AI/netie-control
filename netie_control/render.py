@@ -42,7 +42,7 @@ def _panel(title: str, reading: dict[str, Any], body_fn, extra: str = "", panel_
     cls = "panel" + (f" {extra}" if extra else "")
     id_attr = f' id="{html.escape(panel_id)}"' if panel_id else ""
     badge = f' <span class="count">{_esc(count)}</span>' if count else ""
-    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads"} else ""
+    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads", "plans", "prompts", "fetch"} else ""
     wrap_open = f'<div id="{html.escape(wrap_id)}">' if wrap_id else ""
     wrap_close = "</div>" if wrap_id else ""
     if not reading.get("ok"):
@@ -53,6 +53,24 @@ def _panel(title: str, reading: dict[str, Any], body_fn, extra: str = "", panel_
             extra_step = (
                 'Talk is Crew <a href="http://127.0.0.1:8020">http://127.0.0.1:8020</a>. '
                 "Control does not converse. Control does not POST wakes."
+            )
+        elif panel_id == "sidecar":
+            extra_step = (
+                "Sidecar :8023 is the engine host. Control does not start it. "
+                "Agents do not rebind :8020 (R-0015). GET /v1/sidecar."
+            )
+        elif panel_id == "plans":
+            extra_step = (
+                "Control does not run a plan. POST /v1/run stays 405. GET /v1/plans."
+            )
+        elif panel_id == "prompts":
+            extra_step = (
+                "Prompt bodies refuse (TAS-CONTROL). Control does not copy Crew composer. "
+                "GET /v1/prompts."
+            )
+        elif panel_id == "fetch":
+            extra_step = (
+                "Loopback sidecar only. Not an open proxy. GET /v1/fetch."
             )
         return (
             f'<div class="{cls}"{id_attr}><h2>{_esc(title)}{badge}</h2>'
@@ -434,6 +452,92 @@ def _crew_health_body(d: Any) -> str:
             "Control does not start Cortex.</p>"
         )
     return "".join(bits)
+
+
+def _id_rows_body(
+    d: Any,
+    *,
+    empty: str,
+    lead: str,
+    cols: tuple[str, ...],
+) -> str:
+    d = d or {}
+    items = [row for row in (d.get("items") or []) if isinstance(row, dict)]
+    bits: list[str] = [f"<p>{lead}</p>"]
+    if not items:
+        bits.append(f'<p class="absent">{_esc(empty)}</p>')
+        return "".join(bits)
+    bits.append("<table><tr>" + "".join(f"<th>{_esc(c)}</th>" for c in cols) + "</tr>")
+    for row in items[:40]:
+        bits.append(
+            "<tr>"
+            + "".join(f"<td>{_esc(row.get(c))}</td>" for c in cols)
+            + "</tr>"
+        )
+    bits.append("</table>")
+    return "".join(bits)
+
+
+def _sidecar_body(d: Any) -> str:
+    d = d or {}
+    bits: list[str] = [
+        ("<p>Engine sidecar <code>:8023</code> health. JSON only. "
+        "HTML GET / is not enough (hung :8020 still serves it). "
+        "Control does not start or bind this host. Agents do not rebind :8020 (R-0015). "
+        "Analog mypaperclip is distill-only. No paperclip :3100.</p>")
+    ]
+    if d.get("up"):
+        bits.append(
+            '<p style="color:var(--ok)">Sidecar health ok. Control did not start it.</p>'
+        )
+    else:
+        bits.append('<p class="fail">Sidecar health did not report ok.</p>')
+    bits.append(
+        f"<p>status <code>{_esc(d.get('status'))}</code> "
+        f"service <code>{_esc(d.get('service') or 'unread')}</code>. "
+        '<a href="/v1/sidecar">GET /v1/sidecar</a></p>'
+    )
+    return "".join(bits)
+
+
+def _plans_body(d: Any) -> str:
+    return _id_rows_body(
+        d,
+        empty="plans none. Control does not run a plan. POST /v1/run stays 405.",
+        lead=(
+            "Sidecar GET /v1/plans (ids/titles). Control does not run a plan. "
+            "POST /v1/run stays 405. Not a paperclip clone."
+        ),
+        cols=("id", "title", "status", "owner", "kind"),
+    )
+
+
+def _prompts_body(d: Any) -> str:
+    return _id_rows_body(
+        d,
+        empty="prompts none. Bodies refuse (TAS-CONTROL). Control does not copy Crew composer.",
+        lead=(
+            "Sidecar GET /v1/prompts. Ids/titles only. Prompt and skill_body refuse. "
+            "Control does not copy Crew composer."
+        ),
+        cols=("id", "title", "kind", "source"),
+    )
+
+
+def _fetch_body(d: Any) -> str:
+    q = (d or {}).get("q") or ""
+    lead = (
+        "Sidecar GET /v1/fetch. Loopback only. Not an open proxy. "
+        "Bodies refuse. Control does not run the hit."
+    )
+    if q:
+        lead += f" q=<code>{_esc(q)}</code>."
+    return _id_rows_body(
+        d,
+        empty="fetch none. Empty query or sidecar unread. Not an open proxy.",
+        lead=lead,
+        cols=("id", "title", "kind", "source", "status"),
+    )
 
 
 def _kb_body(d: Any) -> str:
@@ -970,6 +1074,9 @@ def _strip(state: dict[str, Any]) -> str:
     crew_ok = bool(crew.get("ok"))
     talk = state.get("crew_talk") or {}
     talk_ok = bool(talk.get("ok"))
+    sidecar = state.get("sidecar") or {}
+    sidecar_ok = bool(sidecar.get("ok"))
+    sidecar_up = bool((sidecar.get("data") or {}).get("up")) if sidecar_ok else False
     converse = _esc(state.get("crew_converse") or "http://127.0.0.1:8020")
     return (
         '<div class="strip" id="strip">'
@@ -988,6 +1095,7 @@ def _strip(state: dict[str, Any]) -> str:
             cell_id="stripTalk",
             attrs=' target="_blank" rel="noopener"',
         )
+        + _strip_cell("#sidecar", sidecar_ok, "up" if sidecar_up else "down", "sidecar", cell_id="stripSidecar")
         + "</div>"
     )
 
@@ -1044,6 +1152,8 @@ def _howto(contract: dict[str, Any]) -> str:
     cortex_wait = desk.get("cortex_wait_s")
     crew_wait = desk.get("crew_belt_wait_s")
     vault_wait = desk.get("openvault_usage_wait_s")
+    sidecar_wait = desk.get("sidecar_wait_s")
+    sidecar_probe = desk.get("sidecar_probe") or "/health"
     return (
         '<nav class="howto" id="howto" aria-label="Every agent seating steps">'
         "<strong>Every agent</strong>"
@@ -1054,7 +1164,8 @@ def _howto(contract: dict[str, Any]) -> str:
         f"talk_probe={_esc(talk)} you_steps={_esc(steps)} usage_probe={_esc(usage)} "
         f"board_wait_s={_esc(board_wait)} pickup_board_wait_s={_esc(pickup_wait)} "
         f"kb_wait_s={_esc(kb_wait)} cortex_wait_s={_esc(cortex_wait)} "
-        f"crew_belt_wait_s={_esc(crew_wait)} openvault_usage_wait_s={_esc(vault_wait)}. "
+        f"crew_belt_wait_s={_esc(crew_wait)} openvault_usage_wait_s={_esc(vault_wait)} "
+        f"sidecar_wait_s={_esc(sidecar_wait)} sidecar_probe={_esc(sidecar_probe)}. "
         "Cortex runs. Control does not assign. Crew "
         f'<a href="{_esc(converse)}" target="_blank" rel="noopener">:8020</a></span>'
         "</nav>"
@@ -1084,7 +1195,9 @@ def render_page(state: dict[str, Any]) -> str:
     converse_url = _esc(state.get("crew_converse") or "http://127.0.0.1:8020")
     launchers = "".join(
         f"<li><code>{_esc(x['name'])}</code> - {_esc(x['blurb'])} "
-        f"<small>cwd {_esc(x.get('cwd') or '')}</small></li>"
+        f"<small>cwd {_esc(x.get('cwd') or '')}</small>"
+        f"<pre>{_esc(' '.join(str(p) for p in (x.get('argv') or [])))}</pre>"
+        f'<p class="absent">Copy into your shell. Control does not execute. P-CTL-2.</p></li>'
         for x in (state.get("launchers") or [])
     )
     pick = state.get("pickup") or {}
@@ -1123,6 +1236,8 @@ def render_page(state: dict[str, Any]) -> str:
 <a href="#ship">Spaceship</a>
 <a href="#crew">Crew belt</a>
 <a href="#tools">Laptop tools</a>
+<a href="#sidecar">Sidecar :8023</a>
+<a href="#plans">Plans</a>
 <a href="#kb">Skill chest</a>
 <a href="#gate">Gate</a>
 </nav>
@@ -1166,6 +1281,10 @@ No Paperclip brand. No Plane source. No third orchestrator.</p>
 {_panel("Spaceship host (reuse, do not buy)", state.get("spaceship") or {{}}, _spaceship_body, "", "ship")}
 {_panel("Crew conveyor (display-only)", state.get("crew") or {{}}, _crew_belt_body, "", "crew")}
 {_panel("Laptop tools (Crew health)", state.get("crew_health") or {{}}, _crew_health_body, "", "tools")}
+{_panel("Sidecar engine host :8023", state.get("sidecar") or {{}}, _sidecar_body, "", "sidecar")}
+{_panel("Plans (display-only)", state.get("plans") or {{}}, _plans_body, "", "plans", _reading_n(state.get("plans") or {{}}, "items"))}
+{_panel("Prompts (ids only)", state.get("prompts") or {{}}, _prompts_body, "", "prompts", _reading_n(state.get("prompts") or {{}}, "items"))}
+{_panel("Fetch (sidecar GET)", state.get("fetch") or {{}}, _fetch_body, "", "fetch", _reading_n(state.get("fetch") or {{}}, "items"))}
 {_panel("Skill chest (Netie-KB)", state.get("kb") or {{}}, _kb_body, "", "kb")}
 {_gate_panel(gate)}
 </div>
@@ -1177,6 +1296,9 @@ Crew surface (converse lives there, not here):
 <a href="http://127.0.0.1:8020">http://127.0.0.1:8020</a>
  - public name work.netie.ai is HUMAN_STOP.
 Control <code>GET /v1/belt</code> is a display proxy of Crew JSON.
+Control <code>GET /v1/sidecar</code> is sidecar :8023 health.
+<code>GET /v1/plans</code> <code>/v1/prompts</code> <code>/v1/fetch</code> stay GET.
+<code>GET /v1/launchers</code> lists cwd and argv. P-CTL-2 does not execute.
 Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> is unseated work. Control does not assign.
 Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.</footer>
 </main>
@@ -1206,8 +1328,9 @@ Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this she
 <div class="panel" id="lanes"><h2>Local CLI lanes</h2>
 <ol class="steps">
 <li>Declared lanes. Click does nothing. P-CTL-2: no principal yet.</li>
-<li>Control does not execute them. Copy cwd. Run in your own shell.</li>
+<li>Control does not execute them. Copy cwd and argv. Run in your own shell.</li>
 <li>Nothing here starts Grok Bot or Cursor (R-0015).</li>
+<li><a href="/v1/launchers">GET /v1/launchers</a> is the JSON listing. POST /v1/run stays 405.</li>
 </ol>
 <ul>{launchers}</ul>
 <p class="absent">Display only until P-CTL-2. Nothing here starts, restarts or kills
@@ -1216,7 +1339,7 @@ the founder's desktop software (R-0015).</p></div>
 </div>
 <script>
 (function () {{
-  const ids = ["pickup","coordinate","you","board","fleet","runtime","cortex","vault","ship","crew","tools","kb","gate"];
+    const ids = ["pickup","coordinate","you","board","fleet","runtime","cortex","vault","ship","crew","tools","sidecar","plans","prompts","fetch","kb","gate"];
   function show(id, scroll) {{
     const target = ids.includes(id) ? id : "pickup";
     document.querySelectorAll(".stage .panel").forEach(function (p) {{
@@ -1580,6 +1703,56 @@ the founder's desktop software (R-0015).</p></div>
     if (chips) chips.outerHTML = '<p class="absent" id="coordChips">Coordinate unread. GET /v1/coordinate.</p>';
     if (workers) workers.outerHTML = '<p class="absent" id="workers">Workers unread. GET /v1/coordinate.</p>';
   }}
+  function fillHop(id, html, n) {{
+    var body = document.getElementById(id + "Body");
+    if (body) body.innerHTML = html;
+    setCount(id, n);
+  }}
+  function idRowsHtml(b, empty, lead, cols) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var items = d.items || [];
+    var head = "<p>" + lead + "</p>";
+    if (!items.length) return head + '<p class="absent">' + empty + "</p>";
+    var rows = items.slice(0, 40).map(function (row) {{
+      return "<tr>" + cols.map(function (c) {{
+        return "<td>" + esc(row[c]) + "</td>";
+      }}).join("") + "</tr>";
+    }}).join("");
+    return head + "<table><tr>" + cols.map(function (c) {{
+      return "<th>" + esc(c) + "</th>";
+    }}).join("") + "</tr>" + rows + "</table>";
+  }}
+  fetch("/v1/plans").then(readingJson).then(function (b) {{
+    fillHop("plans", idRowsHtml(b,
+      "plans none. Control does not run a plan. POST /v1/run stays 405.",
+      "Sidecar GET /v1/plans (ids/titles). Control does not run a plan. POST /v1/run stays 405. Not a paperclip clone.",
+      ["id", "title", "status", "owner", "kind"]),
+      (b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
+  }}).catch(function () {{
+    var body = document.getElementById("plansBody");
+    if (body) body.innerHTML = '<p class="absent">Plans unread. GET /v1/plans.</p>';
+  }});
+  fetch("/v1/prompts").then(readingJson).then(function (b) {{
+    fillHop("prompts", idRowsHtml(b,
+      "prompts none. Bodies refuse (TAS-CONTROL). Control does not copy Crew composer.",
+      "Sidecar GET /v1/prompts. Ids/titles only. Prompt and skill_body refuse. Control does not copy Crew composer.",
+      ["id", "title", "kind", "source"]),
+      (b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
+  }}).catch(function () {{
+    var body = document.getElementById("promptsBody");
+    if (body) body.innerHTML = '<p class="absent">Prompts unread. GET /v1/prompts.</p>';
+  }});
+  fetch("/v1/fetch").then(readingJson).then(function (b) {{
+    fillHop("fetch", idRowsHtml(b,
+      "fetch none. Empty query or sidecar unread. Not an open proxy.",
+      "Sidecar GET /v1/fetch. Loopback only. Not an open proxy. Bodies refuse. Control does not run the hit.",
+      ["id", "title", "kind", "source", "status"]),
+      (b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
+  }}).catch(function () {{
+    var body = document.getElementById("fetchBody");
+    if (body) body.innerHTML = '<p class="absent">Fetch unread. GET /v1/fetch.</p>';
+  }});
   function tickCoordinate() {{
     fetch("/v1/coordinate").then(readingJson).then(function (b) {{
       var d = (b && b.ok && b.data) ? b.data : null;
