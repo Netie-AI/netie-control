@@ -748,8 +748,10 @@ def _fleet_body(d: Any) -> str:
         (f"<p>Who is seated. CLAIMS seated={_esc(d.get('seated', 0))} "
         f"held={_esc(d.get('held', 0))}. GitHub is SoT. Control does not seat anyone.</p>"),
         f'<p class="absent">{_esc(d.get("lane_rule") or "Lane tags are a guess. cursor/* is not proof of cloud vs this PC.")}</p>',
-        '<p class="absent">Talk live is Crew GET /crew/wakes. Hung :8020 HTML / is not a seat. '
-        "Sidecar is :8023. crew-bind never greens from this board.</p>",
+        (
+            '<p class="absent">Talk live is Crew GET /crew/wakes. Hung :8020 HTML / is not a seat. '
+            "Sidecar is :8023. crew-bind never greens from this board.</p>"
+        ),
     ]
     if not rows:
         bits.append('<p class="absent">Claims board carries no ticket rows.</p>')
@@ -783,8 +785,10 @@ def _talk_wakes_html(blob: Any) -> str:
     blob = blob if isinstance(blob, dict) else {}
     bits = [
         '<div id="talkWakes">',
-        "<p><strong>Talk wakes</strong> (Crew GET /crew/wakes). "
-        "HTML GET / is not enough. Control does not POST wakes.</p>",
+        (
+            "<p><strong>Talk wakes</strong> (Crew GET /crew/wakes). "
+            "HTML GET / is not enough. Control does not POST wakes.</p>"
+        ),
     ]
     if not blob.get("ok"):
         bits.append(

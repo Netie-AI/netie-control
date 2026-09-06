@@ -1293,9 +1293,7 @@ def _reading_live(reading: dict[str, Any], key: str = "up") -> bool:
         return status in ("ok", "healthy")
     if "ok" in data:
         return bool(data.get("ok"))
-    if data.get("service"):
-        return True
-    return False
+    return bool(data.get("service"))
 
 
 def _probe_unread(reading: dict[str, Any]) -> bool:
