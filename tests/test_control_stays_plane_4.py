@@ -116,7 +116,7 @@ def _quiet_peer_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sources,
         "crew_talk_view",
-        lambda: Reading.unreachable("http://127.0.0.1:8020/", "test: no live Crew talk"),
+        lambda: Reading.unreachable("http://127.0.0.1:8020/crew/wakes", "test: no live Crew talk"),
     )
     monkeypatch.setattr(
         sources,
@@ -1192,6 +1192,10 @@ def test_fleet_panel_shows_who_where_what(
     assert "scope the SQL" in page
     assert "cursor/e9-02-sql-scope-68a9" in page
     assert "not proof of cloud vs this PC" in page
+    assert "Talk live is Crew GET /crew/wakes" in page
+    assert "Hung :8020 HTML / is not a seat" in page
+    assert "Sidecar is :8023" in page
+    assert "crew-bind never greens from this board" in page
     body = client.get("/v1/fleet").json()
     assert body["ok"] is True
     assert body["display_only"] is True
@@ -1331,6 +1335,10 @@ def test_you_desk_names_crew_engine_bind(client: TestClient) -> None:
     assert bind["kind"] == "you"
     assert bind["n"] == "8"
     assert bind["url"] == "http://127.0.0.1:8020"
+    assert "/crew/wakes" in bind["do"]
+    assert ":8023" in bind["do"]
+    assert "crew-bind never greens" in bind["do"]
+    assert "HTML GET /" in bind["do"]
     assert client.post("/v1/you", json={"run": "crew-engine-bind"}).status_code != 200
 
 
@@ -1826,11 +1834,14 @@ def test_v1_coordinate_is_display_only_and_does_not_invoke(client: TestClient) -
     assert by_id["spawn"]["live"] is False
     assert "does not spawn" in by_id["spawn"]["do_not"]
     assert by_id["talk"]["live"] is False
+    assert by_id["talk"]["unread"] is True
     assert by_id["talk"]["href"] == "http://127.0.0.1:8020"
     assert by_id["sidecar"]["live"] is False
+    assert by_id["sidecar"]["unread"] is True
     assert by_id["sidecar"]["href"] == "/v1/sidecar"
     assert "do not rebind :8020" in by_id["sidecar"]["do_not"]
     assert by_id["crew-bind"]["live"] is False
+    assert by_id["crew-bind"]["unread"] is False
     assert "must not start or kill" in by_id["crew-bind"]["do_not"]
     assert by_id["crew-bind"]["href"] == "/v1/you"
     assert by_id["skills"]["live"] is False
@@ -1840,6 +1851,13 @@ def test_v1_coordinate_is_display_only_and_does_not_invoke(client: TestClient) -
     assert "YOU step 8" in page
     assert "Bind live :8020 to engine Crew" in page
     assert "Agents must not start or kill :8020" in page
+    assert "Talk live is Crew GET /crew/wakes" in page
+    assert "crew-bind never greens" in page
+    assert 'data-id="crew-bind"' in page
+    assert 'class="coord-chip live" href="/v1/you" data-id="crew-bind"' not in page
+    assert 'class="coord-chip down" href="/v1/you" data-id="crew-bind"' in page
+    assert "Talk wakes unread" in page
+    assert 'id="talkWakes"' in page
     assert 'class="coord-chips"' in page
     assert "Control will not start Cursor.exe" in page
     assert "F-0030 Control does not spawn" in page
@@ -1871,7 +1889,12 @@ def test_v1_coordinate_is_display_only_and_does_not_invoke(client: TestClient) -
     assert ".live.is-unread { color: var(--warn); }" in page
     assert 'id="coordChips">Coordinate unread. GET /v1/coordinate.' in page
     assert (body.get("data") or {}).get("health_deferred") is True
+    wakes = (body.get("data") or {}).get("talk_wakes") or {}
+    assert wakes.get("ok") is False
+    assert "crew/wakes" in str(wakes.get("source") or "")
     assert "if (workers && !d.health_deferred) workers.outerHTML = workersHtml(d)" in page
+    assert "fillStripFromCoord" in page
+    assert 'lane.id !== "crew-bind"' in page
     assert client.post("/v1/coordinate", json={"spawn": "ticket-runner"}).status_code != 200
     assert client.post("/v1/run").status_code == 405
     assert client.post("/v1/goal").status_code == 405
@@ -2295,7 +2318,7 @@ def test_talk_live_is_crew_host_not_slow_health(
         sources,
         "crew_talk_view",
         lambda: Reading(
-            ok=True, data={"up": True, "wakes": True}, source="http://127.0.0.1:8020/"
+            ok=True, data={"up": True, "wakes": True}, source="http://127.0.0.1:8020/crew/wakes"
         ),
     )
     monkeypatch.setattr(
@@ -2316,6 +2339,9 @@ def test_talk_live_is_crew_host_not_slow_health(
     assert "coord-chip live" in page
     assert 'id="stripTalk">up</b>' in page
     assert 'id="stripCrew">unread</b>' in page
+    assert 'class="coord-chip down" href="/v1/you" data-id="crew-bind"' in page
+    assert 'class="coord-chip live" href="/v1/you" data-id="crew-bind"' not in page
+    assert lanes["crew-bind"]["live"] is False
 
 
 def test_coordinate_poll_does_not_call_crew_health(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
@@ -2332,7 +2358,7 @@ def test_coordinate_poll_does_not_call_crew_health(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         sources,
         "crew_talk_view",
-        lambda: Reading(ok=True, data={"up": True}, source="http://127.0.0.1:8020/"),
+        lambda: Reading(ok=True, data={"up": True}, source="http://127.0.0.1:8020/crew/wakes"),
     )
     body = client.get("/v1/coordinate").json()
     assert called == []
@@ -2368,7 +2394,10 @@ def test_crew_talk_view_discards_html(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sources, "loopback_get_json", fake_json)
     reading = _REAL_CREW_TALK()
     assert reading.ok is True
-    assert reading.data == {"up": True, "wakes": True}
+    assert reading.data["up"] is True
+    assert reading.data["wakes"] is True
+    assert reading.data["items"] == []
+    assert reading.data["count"] == 0
     assert str(reading.source).endswith("/crew/wakes")
     # F-0026 class: Crew's HTML must not travel into Control and become a second
     # copy of the composer. Assert on the serialised payload, not on the keys we
@@ -2553,10 +2582,13 @@ def test_sidecar_up_does_not_green_crew_bind(
     assert "Sidecar health ok" in page
     assert "Control did not start it" in page
     assert 'id="stripSidecar">up</b>' in page
+    assert 'class="coord-chip down" href="/v1/you" data-id="crew-bind"' in page
     body = client.get("/v1/coordinate").json()
     lanes = {row["id"]: row for row in (body.get("data") or {}).get("lanes") or []}
     assert lanes["sidecar"]["live"] is True
+    assert lanes["sidecar"]["unread"] is False
     assert lanes["crew-bind"]["live"] is False
+    assert lanes["crew-bind"]["unread"] is False
     assert client.post("/v1/run").status_code == 405
     assert client.post("/v1/goal").status_code == 405
 
@@ -2733,4 +2765,156 @@ def test_no_paperclip_clone_and_no_crew_composer() -> None:
     parking = (root / "PARKING_LOT.md").read_text(encoding="utf-8")
     assert "P-CTL-2" in parking
     assert "Unlock:" in parking
+
+
+def test_crew_talk_view_does_not_probe_html_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Talk live is GET /crew/wakes. Hung :8020 HTML / must not be the probe."""
+    from netie_control import sources
+
+    seen: list[str] = []
+
+    def fake_json(url: str, timeout: float = 2.0) -> Reading:
+        seen.append(url)
+        return Reading.unreachable(url, "HTTP 404")
+
+    def boom_status(*_a: object, **_k: object) -> Reading:
+        raise AssertionError("crew_talk_view must not probe HTML GET /")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake_json)
+    monkeypatch.setattr(sources, "loopback_get_status", boom_status)
+    reading = _REAL_CREW_TALK()
+    assert reading.ok is False
+    assert seen == ["http://127.0.0.1:8020/crew/wakes"]
+    assert str(reading.source).endswith("/crew/wakes")
+
+
+def test_crew_talk_view_slims_wakes_and_drops_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        assert url.endswith("/crew/wakes")
+        return Reading(
+            ok=True,
+            source=url,
+            data={
+                "wakes": [
+                    {
+                        "id": "w1",
+                        "kind": "ticket",
+                        "state": "idle",
+                        "note": "desk",
+                        "html": "<form>composer</form>",
+                        "prompt": "must not copy",
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    reading = _REAL_CREW_TALK()
+    assert reading.ok is True
+    assert reading.data["up"] is True
+    row = reading.data["items"][0]
+    assert row["kind"] == "ticket"
+    assert row["state"] == "idle"
+    blob = json.dumps(reading.data)
+    assert "composer" not in blob
+    assert "must not copy" not in blob
+    assert "<form" not in blob
+
+
+def test_talk_and_sidecar_live_do_not_green_crew_bind(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Talk + sidecar up still leave crew-bind absent. Owners invoke. Control does not."""
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "crew_talk_view",
+        lambda: Reading(
+            ok=True,
+            source="http://127.0.0.1:8020/crew/wakes",
+            data={
+                "up": True,
+                "wakes": True,
+                "items": [{"kind": "ticket", "state": "idle", "note": "desk"}],
+                "count": 1,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        sources,
+        "sidecar_view",
+        lambda: Reading(
+            ok=True,
+            source="http://127.0.0.1:8023/health",
+            data={"up": True, "status": "ok", "service": "sidecar"},
+        ),
+    )
+    body = client.get("/v1/coordinate").json()
+    lanes = {row["id"]: row for row in (body.get("data") or {}).get("lanes") or []}
+    assert lanes["talk"]["live"] is True
+    assert lanes["sidecar"]["live"] is True
+    assert lanes["crew-bind"]["live"] is False
+    wakes = (body.get("data") or {}).get("talk_wakes") or {}
+    assert wakes.get("ok") is True
+    assert wakes["items"][0]["kind"] == "ticket"
+    page = client.get("/").text
+    assert "Talk wakes" in page
+    assert ">ticket</td>" in page
+    assert 'class="coord-chip down" href="/v1/you" data-id="crew-bind"' in page
+    assert 'class="coord-chip live" href="/v1/you" data-id="crew-bind"' not in page
+    assert 'id="stripTalk">up</b>' in page
+    assert 'id="stripSidecar">up</b>' in page
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/goal").status_code == 405
+    assert client.post("/v1/route").status_code == 405
+    assert client.post("/v1/secrets").status_code == 405
+
+
+def test_reading_live_does_not_invent_green() -> None:
+    from netie_control import sources
+
+    assert sources._reading_live({"ok": True, "data": {}}) is False
+    assert sources._reading_live({"ok": True, "data": None}) is False
+    assert sources._reading_live({"ok": True, "data": "yes"}) is False
+    assert sources._reading_live({"ok": False, "data": {"up": True}}) is False
+    assert sources._reading_live({"ok": True, "data": {"up": True}}) is True
+    assert sources._reading_live({"ok": True, "data": {"up": False}}) is False
+
+
+def test_hung_html_root_is_not_json_live() -> None:
+    """Hung :8020 still serves HTML /. JSON talk must not go green on that."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class HungHtml(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = b"<!doctype html><html><body>hung crew fork</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args: object) -> None:
+            return
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), HungHtml)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+        html = loopback_get_json(url)
+        assert html.ok is False
+        assert "json" in (html.detail or "").lower()
+        status = loopback_get_status(url)
+        assert status.ok is True
+        assert status.data == {"up": True}
+    finally:
+        httpd.shutdown()
+
 

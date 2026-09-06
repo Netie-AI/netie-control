@@ -40,6 +40,7 @@ SIDECAR_WAIT_S = 1.5
 PLAN_ROW_KEYS = ("id", "title", "status", "owner", "kind")
 PROMPT_ROW_KEYS = ("id", "title", "kind", "source")
 FETCH_ROW_KEYS = ("id", "title", "kind", "source", "status")
+WAKE_ROW_KEYS = ("id", "kind", "state", "note")
 USAGE_SUMMARY_KEYS = (
     "requests",
     "prompt_tokens",
@@ -406,6 +407,17 @@ def crew_belt_view() -> Reading:
     return Reading.unreachable(v1, why)
 
 
+def slim_crew_wakes(payload: Any) -> dict[str, Any]:
+    """Talk liveness plus wake rows. HTML / composer / bodies never travel."""
+    items = _slim_rows(payload, WAKE_ROW_KEYS, "wakes", "items")
+    return {
+        "up": True,
+        "wakes": True,
+        "items": items,
+        "count": len(items),
+    }
+
+
 def crew_talk_view() -> Reading:
     """Engine converse host. Does not copy Crew HTML (F-0026).
 
@@ -418,7 +430,7 @@ def crew_talk_view() -> Reading:
     if not raw.ok:
         why = raw.detail or "wakes unread"
         return Reading.unreachable(wakes, why)
-    return Reading(ok=True, data={"up": True, "wakes": True}, source=wakes)
+    return Reading(ok=True, data=slim_crew_wakes(raw.data), source=wakes)
 
 
 def _slim_rows(payload: Any, keys: tuple[str, ...], *list_keys: str) -> list[dict[str, Any]]:
@@ -898,9 +910,11 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
         "id": "crew-engine-bind",
         "title": "Bind live :8020 to engine Crew",
         "do": "Live converse is still the Cortex-crew fork. Belt /v1/belt hangs; "
-             "/crew/belt 404s. Stop that hung process yourself, then start "
-             "python -m CortexOS.crew from E:\\Cortex (scripts\\start_crew.ps1). "
-             "Agents must not start or kill it (R-0015). Control stays display-only.",
+             "/crew/belt 404s. Talk live is Crew GET /crew/wakes, not HTML GET /. "
+             "Sidecar engine host is :8023 (GET /v1/sidecar). Stop that hung "
+             "process yourself, then start python -m CortexOS.crew from E:\\Cortex "
+             "(scripts\\start_crew.ps1). Agents must not start or kill it (R-0015). "
+             "crew-bind never greens. Control stays display-only.",
         "url": "http://127.0.0.1:8020",
         "kind": "you",
     },
@@ -1271,7 +1285,7 @@ def _reading_live(reading: dict[str, Any], key: str = "up") -> bool:
         return False
     data = reading.get("data")
     if not isinstance(data, dict):
-        return True
+        return False
     if key in data:
         return bool(data.get(key))
     status = data.get("status")
@@ -1279,9 +1293,35 @@ def _reading_live(reading: dict[str, Any], key: str = "up") -> bool:
         return status in ("ok", "healthy")
     if "ok" in data:
         return bool(data.get("ok"))
-    if data.get("service"):
-        return True
-    return True
+    return bool(data.get("service"))
+
+
+def _probe_unread(reading: dict[str, Any]) -> bool:
+    """True when the probe did not answer. Deferred skips are still unread, not green."""
+    return not bool(reading.get("ok") if isinstance(reading, dict) else False)
+
+
+def _talk_wakes_from(crew_talk: dict[str, Any]) -> dict[str, Any]:
+    """Named wakes from GET /crew/wakes. Empty is idle, unread is unread."""
+    crew_talk = crew_talk if isinstance(crew_talk, dict) else {}
+    source = str(crew_talk.get("source") or f"{crew_base()}/crew/wakes")
+    if not crew_talk.get("ok"):
+        return {
+            "ok": False,
+            "items": [],
+            "count": 0,
+            "source": source,
+            "detail": str(crew_talk.get("detail") or "wakes unread"),
+        }
+    data = crew_talk.get("data") if isinstance(crew_talk.get("data"), dict) else {}
+    items = [row for row in (data.get("items") or []) if isinstance(row, dict)][:20]
+    return {
+        "ok": True,
+        "items": items,
+        "count": len(items),
+        "source": source,
+        "detail": "",
+    }
 
 
 def _surface_present(surfaces: dict[str, Any], label: str) -> bool:
@@ -1403,6 +1443,7 @@ def coordinate_teammates(
             "name": "Crew talk",
             "kind": "talk",
             "live": _reading_live(crew_talk),
+            "unread": _probe_unread(crew_talk),
             "invoke": crew,
             "href": crew,
             "do_not": "Do not copy Crew composer into Control",
@@ -1426,6 +1467,7 @@ def coordinate_teammates(
             "name": "Sidecar :8023",
             "kind": "sidecar",
             "live": _reading_live(sidecar),
+            "unread": _probe_unread(sidecar),
             "invoke": sidecar_base(),
             "href": "/v1/sidecar",
             "do_not": "Control does not start :8023. Agents do not rebind :8020",
@@ -1496,6 +1538,7 @@ def coordinate_payload(
             "invoke": crew,
             "href": crew,
             "live": _reading_live(crew_talk),
+            "unread": _probe_unread(crew_talk),
             "do_not": "Do not copy Crew composer into Control",
         },
         {
@@ -1505,6 +1548,7 @@ def coordinate_payload(
             "invoke": sidecar_base(),
             "href": "/v1/sidecar",
             "live": _reading_live(sidecar),
+            "unread": _probe_unread(sidecar),
             "do_not": "Control does not start :8023. Agents do not rebind :8020",
         },
         {
@@ -1514,6 +1558,7 @@ def coordinate_payload(
             "invoke": "YOU step 8. scripts\\start_crew.ps1 from E:\\Cortex",
             "href": "/v1/you",
             "live": False,
+            "unread": False,
             "do_not": "Agents must not start or kill :8020",
         },
         {
@@ -1573,6 +1618,10 @@ def coordinate_payload(
             "do_not": "F-0030 Control does not spawn",
         },
     ]
+    for lane in lanes:
+        if lane.get("id") == "crew-bind":
+            lane["live"] = False
+            lane["unread"] = False
     live_n = sum(1 for lane in lanes if lane.get("live"))
     teammates = coordinate_teammates(
         surfaces=surfaces,
@@ -1586,10 +1635,12 @@ def coordinate_payload(
     workers = workers_from(cortex, crew_health)
     health_why = str(crew_health.get("detail") or "")
     health_deferred = (not crew_health.get("ok")) and health_why.startswith("deferred")
+    talk_wakes = _talk_wakes_from(crew_talk)
     return {
         "lanes": lanes,
         "teammates": teammates,
         "workers": workers,
+        "talk_wakes": talk_wakes,
         "health_deferred": health_deferred,
         "live": live_n,
         "router": {

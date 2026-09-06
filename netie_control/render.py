@@ -748,6 +748,10 @@ def _fleet_body(d: Any) -> str:
         (f"<p>Who is seated. CLAIMS seated={_esc(d.get('seated', 0))} "
         f"held={_esc(d.get('held', 0))}. GitHub is SoT. Control does not seat anyone.</p>"),
         f'<p class="absent">{_esc(d.get("lane_rule") or "Lane tags are a guess. cursor/* is not proof of cloud vs this PC.")}</p>',
+        (
+            '<p class="absent">Talk live is Crew GET /crew/wakes. Hung :8020 HTML / is not a seat. '
+            "Sidecar is :8023. crew-bind never greens from this board.</p>"
+        ),
     ]
     if not rows:
         bits.append('<p class="absent">Claims board carries no ticket rows.</p>')
@@ -770,13 +774,57 @@ def _fleet_body(d: Any) -> str:
     return "".join(bits)
 
 
+def _chip_live(lane: dict[str, Any]) -> bool:
+    """crew-bind never greens, even if a payload lies (R-0011 / R-0015)."""
+    if str(lane.get("id") or "") == "crew-bind":
+        return False
+    return bool(lane.get("live")) and not bool(lane.get("unread"))
+
+
+def _talk_wakes_html(blob: Any) -> str:
+    blob = blob if isinstance(blob, dict) else {}
+    bits = [
+        '<div id="talkWakes">',
+        (
+            "<p><strong>Talk wakes</strong> (Crew GET /crew/wakes). "
+            "HTML GET / is not enough. Control does not POST wakes.</p>"
+        ),
+    ]
+    if not blob.get("ok"):
+        bits.append(
+            f'<p class="absent">Talk wakes unread: {_esc(blob.get("detail") or "unread")}. '
+            f'Source: <code>{_esc(blob.get("source") or "/crew/wakes")}</code>.</p>'
+            "</div>"
+        )
+        return "".join(bits)
+    items = [row for row in (blob.get("items") or []) if isinstance(row, dict)]
+    if not items:
+        bits.append(
+            '<p class="absent">wakes none (Crew tick idle). Control does not POST wakes.</p>'
+            "</div>"
+        )
+        return "".join(bits)
+    bits.append("<table><tr><th>kind</th><th>state</th><th>note</th></tr>")
+    for row in items[:20]:
+        bits.append(
+            "<tr>"
+            f"<td>{_esc(row.get('kind'))}</td>"
+            f"<td>{_esc(row.get('state'))}</td>"
+            f"<td>{_esc(row.get('note'))}</td>"
+            "</tr>"
+        )
+    bits.append("</table></div>")
+    return "".join(bits)
+
+
 def _coordinate_body(d: Any) -> str:
     d = d or {}
     bits: list[str] = [
         f'<p class="absent">{_esc(d.get("note") or "Control displays who to invoke.")}</p>',
         '<ol class="steps">',
         "<li>Owners invoke. Control displays this map. Control does not spawn.</li>",
-        "<li>Talk is Crew :8020. POST /v1/run stays 405.</li>",
+        "<li>Talk live is Crew GET /crew/wakes. HTML GET / on hung :8020 is not enough.</li>",
+        "<li>Sidecar is :8023. crew-bind never greens. POST /v1/run stays 405.</li>",
         "<li>Talk unread: YOU step 8 binds :8020 to E:\\Cortex. Agents do not restart it.</li>",
         "</ol>",
         ('<p><a class="btn" href="/v1/coordinate">GET /v1/coordinate</a> '
@@ -792,9 +840,10 @@ def _coordinate_body(d: Any) -> str:
         if not isinstance(lane, dict):
             continue
         n += 1
-        live = bool(lane.get("live"))
+        live = _chip_live(lane)
+        unread = bool(lane.get("unread")) and str(lane.get("id") or "") != "crew-bind"
         dot = "live" if live else "down"
-        state = "live" if live else "absent"
+        state = "unread" if unread else ("live" if live else "absent")
         extra = ""
         if lane.get("count") is not None:
             extra = f' · {_esc(lane.get("count"))} pads'
@@ -803,7 +852,7 @@ def _coordinate_body(d: Any) -> str:
             extra += " · " + " ".join(f"{_esc(k)}={_esc(v)}" for k, v in counts.items())
         href = str(lane.get("href") or "#")
         bits.append(
-            f'<a class="coord__row" href="{_esc(href)}">'
+            f'<a class="coord__row" href="{_esc(href)}" data-id="{_esc(lane.get("id") or "")}">'
             f'<span class="coord__n">{n}</span>'
             f'<span class="dot {dot}"></span>'
             f"<span><strong>{_esc(lane.get('job'))}</strong>"
@@ -812,6 +861,7 @@ def _coordinate_body(d: Any) -> str:
             f"<em>{state}</em></a>"
         )
     bits.append("</div>")
+    bits.append(_talk_wakes_html(d.get("talk_wakes")))
     mates = d.get("teammates") or []
     if mates:
         bits.append("<p><strong>Teammates</strong> (named roster. Owners invoke.)</p>")
@@ -856,10 +906,11 @@ def _coord_chips(reading: dict[str, Any]) -> str:
     for lane in lanes:
         if not isinstance(lane, dict):
             continue
-        live = "live" if lane.get("live") else "down"
+        live = "live" if _chip_live(lane) else "down"
         href = str(lane.get("href") or "#coordinate")
         bits.append(
             f'<a class="coord-chip {live}" href="{_esc(href)}" '
+            f'data-id="{_esc(lane.get("id") or "")}" '
             f'title="{_esc(lane.get("do_not") or "")}">'
             f'<span class="dot {live}"></span>{_esc(lane.get("job"))}</a>'
         )
@@ -872,9 +923,10 @@ def _coord_chips(reading: dict[str, Any]) -> str:
         if shown >= 8:
             break
         shown += 1
-        live = "live" if mate.get("live") else "down"
+        live = "live" if (mate.get("live") and not mate.get("unread")) else "down"
         bits.append(
             f'<a class="coord-chip {live}" href="{_esc(mate.get("href") or "#coordinate")}" '
+            f'data-id="{_esc(mate.get("id") or "")}" '
             f'title="{_esc(mate.get("do_not") or "")}">'
             f'<span class="dot {live}"></span>{_esc(mate.get("name"))}</a>'
         )
@@ -1659,24 +1711,27 @@ the founder's desktop software (R-0015).</p></div>
     var strip = document.getElementById("stripPads");
     if (strip) strip.textContent = "unread";
   }});
-  function chipHtml(live, href, label, title) {{
-    var cls = live ? "live" : "down";
+  function chipHtml(live, href, label, title, id) {{
+    var bind = id === "crew-bind";
+    var cls = (live && !bind) ? "live" : "down";
     return '<a class="coord-chip ' + cls + '" href="' + esc(href || "#coordinate")
-      + '" title="' + esc(title || "") + '"><span class="dot ' + cls + '"></span>'
+      + '" data-id="' + esc(id || "") + '" title="' + esc(title || "")
+      + '"><span class="dot ' + cls + '"></span>'
       + esc(label) + "</a>";
   }}
   function coordChipsHtml(d) {{
     var bits = [];
     (d.lanes || []).forEach(function (lane) {{
       if (!lane) return;
-      bits.push(chipHtml(!!lane.live, lane.href, lane.job, lane.do_not));
+      var live = !!lane.live && !lane.unread && lane.id !== "crew-bind";
+      bits.push(chipHtml(live, lane.href, lane.job, lane.do_not, lane.id));
     }});
     var shown = 0;
     (d.teammates || []).forEach(function (mate) {{
       if (!mate || ["seater", "talk", "run", "pad", "task"].indexOf(mate.kind) < 0) return;
       if (shown >= 8) return;
       shown += 1;
-      bits.push(chipHtml(!!mate.live, mate.href, mate.name, mate.do_not));
+      bits.push(chipHtml(!!mate.live && !mate.unread, mate.href, mate.name, mate.do_not, mate.id));
     }});
     return '<div class="coord-chips" id="coordChips" aria-label="Invoke owners">'
       + bits.join("") + "</div>";
@@ -1687,10 +1742,32 @@ the founder's desktop software (R-0015).</p></div>
       return '<p class="absent" id="workers">No live Cortex workflows or armed Crew MCPs this tick.</p>';
     }}
     var bits = workers.slice(0, 12).map(function (row) {{
-      return chipHtml(!!row.live && !row.unread, row.href, (row.kind || "") + " " + (row.name || ""), row.do_not);
+      return chipHtml(!!row.live && !row.unread, row.href, (row.kind || "") + " " + (row.name || ""), row.do_not, row.kind);
     }});
     return '<div class="coord-chips" id="workers" aria-label="Live workers">'
       + bits.join("") + "</div>";
+  }}
+  function setStripCell(id, unread, live, upText) {{
+    var el = document.getElementById(id);
+    if (!el) return;
+    var cell = el.closest(".strip__cell");
+    if (unread) {{
+      el.textContent = "unread";
+      if (cell) cell.classList.add("is-absent");
+      return;
+    }}
+    el.textContent = live ? (upText || "up") : "down";
+    if (cell) cell.classList.remove("is-absent");
+  }}
+  function fillStripFromCoord(d) {{
+    var lanes = {{}};
+    (d.lanes || []).forEach(function (lane) {{
+      if (lane && lane.id) lanes[lane.id] = lane;
+    }});
+    if (lanes.talk) setStripCell("stripTalk", !!lanes.talk.unread, !!lanes.talk.live, "up");
+    if (lanes.sidecar) setStripCell("stripSidecar", !!lanes.sidecar.unread, !!lanes.sidecar.live, "up");
+    var bind = lanes["crew-bind"];
+    if (bind) bind.live = false;
   }}
   function coordUnread() {{
     var liveDot = document.getElementById("liveDot");
@@ -1765,6 +1842,7 @@ the founder's desktop software (R-0015).</p></div>
       }}
       if (chips) chips.outerHTML = coordChipsHtml(d);
       if (workers && !d.health_deferred) workers.outerHTML = workersHtml(d);
+      fillStripFromCoord(d);
       if (liveDot) {{
         liveDot.className = "live";
         liveDot.textContent = "live " + (d.live || 0);
