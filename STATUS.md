@@ -1,6 +1,6 @@
 # STATUS.md - Netie Control
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-06
 **Remote:** public https://github.com/Netie-AI/netie-control
 **Plane:** 4 - operator shell
 
@@ -19,14 +19,15 @@ python -m pytest E:\NetieControl\tests -q
 | Cortex first page | GET loopback `/health` + activity + features in one pool (1.5s). Hero with OpenVault. Hung activity is workflow unread, not idle. Hung features named. Unreachable never "Cortex is up" |
 | OpenVault liveness | GET `/api/healthz` + `/api/usage` in parallel (1.5s). Display only. `priced=false`. No invented prices. |
 | Crew conveyor | Display-only. Probes Crew `/v1/belt` and `/crew/belt` (1.5s). Belt skipped Cortex ping is named skip, not a hung ping. Idle names wakes none. Converse stays on Crew. Control does not POST wakes or approve. |
-| CI | `.github/workflows/ci.yml` - ruff + pytest. Remote still unpushed |
+| CI | `.github/workflows/ci.yml` - ruff + pytest |
 | Fleet view | Crew `/crew/health` (engine_ok named, never dropped) + KB `/healthz` + OpenVault custody copy. Display only |
 | Who/where | CLAIMS kanban + lane guess + live Claude pads (`GET /v1/pads`) + tasklist + parsed RUNTIME. `GET /v1/fleet` |
 | Chrome | Rail + inspector + kanban. Unread live-dot is warn, not mint. Strip unread is not `?`. Guaca/Rakazo tokens. Not Plane source, not Paperclip React |
-| YOU desk | Numbered HITL with GitHub URLs. HT1/HT2 HUMAN_STOP. Step 8: founder binds live `:8020` to engine Crew. No invented prices or host URLs. `GET /v1/you` |
+| YOU desk | Numbered HITL with GitHub URLs. HT1/HT2 HUMAN_STOP. Step 8: founder binds live `:8020` to engine Crew. Talk live is `/crew/wakes`. Sidecar is `:8023`. No invented prices or host URLs. `GET /v1/you` |
 | Pickup tray | Unseated CLAIMS first. Board overlay 1.5s. Live issues stay `GET /v1/board`. Display only |
-| Coordinate map | Numbered invoke lanes. `crew-bind` never green. Poll names chips unread; does not idle-wipe SSR workers. Talk = `/crew/wakes` in the peer pool (named source is wakes). GET `/` talk+health one pool. Pads live hop is `GET /v1/pads`. Live hops throw on HTTP error so FastAPI 404 cannot paint as a reading. Panel counts unread not ?. No spawn |
-| Agent contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/coordinate`. Desk names crew_belt and openvault waits. No assign POST |
+| Coordinate map | Numbered invoke lanes. `crew-bind` never green. Talk wakes from `/crew/wakes` (HTML GET `/` is not enough). Sidecar lane is `:8023`. Poll refreshes talk/sidecar strip. No spawn |
+| Agent contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/coordinate`. Desk names crew_belt, sidecar, and openvault waits. No assign POST |
+| Display GETs | `GET /v1/plans` `/v1/prompts` `/v1/fetch` `/v1/sidecar` `/v1/launchers`. GET only. P-CTL-2 does not execute. |
 | Estate gate | Desk paints first (`GET /v1/gate not yet`, not checking). Live verdict is `GET /v1/gate`. Banner stays UNKNOWN until then |
 | Gh board | Desk paints first. Live issues are `GET /v1/board` (4s). Hung gh named unread. Pickup overlay 1.5s. Favicon 204 |
 | Cortex governance | Displays `activity.governance` window (refusals, bound session ids). No ledger scrape |
@@ -37,7 +38,7 @@ python -m pytest E:\NetieControl\tests -q
 | ID | Work |
 |----|------|
 | **NEEDS-YOU** | Lift `dms#61` in `FLEET.md`. The PR is MERGED. Gate still HOLD_MISSING |
-| **NEEDS-YOU** | Bind live `:8020` to `python -m CortexOS.crew` from `E:\Cortex`. Agents must not start or kill that process (R-0015). Disk YOU step 8 + coordinate `crew-bind` (`live` false) + strip crew-belt cell. Live `:8040` still has 7 YOU steps, 10 coordinate lanes, no strip cell until this process is reloaded. |
+| **NEEDS-YOU** | Bind live `:8020` to `python -m CortexOS.crew` from `E:\Cortex`. Agents must not start or kill that process (R-0015). Issue #5 stays OPEN. |
 | **NEEDS-YOU** | Point **work.netie.ai** at this box (tunnel / Access), then `/healthz` |
 | **NEEDS-YOU** | Answer **F36** (extract vs live federation) and **F45** (insights epic). Both park finished, green dms branches. YOU steps 2 and 3 link them |
 | Not built | Launchers unwired (P-CTL-2: desk names cwd, does not execute) |

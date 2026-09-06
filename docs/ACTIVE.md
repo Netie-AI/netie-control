@@ -2,12 +2,12 @@
 
 | Path | What |
 |---|---|
-| `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/gate` `GET /v1/board` `GET /v1/pads` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
+| `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/gate` `GET /v1/board` `GET /v1/pads` `GET /v1/sidecar` `GET /v1/plans` `GET /v1/prompts` `GET /v1/fetch` `GET /v1/launchers` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
 | `AGENTS.md` | Seating contract for Cursor, Claude Code, Grok Bot. Same clause as CLAUDE.md operator desk |
 | `netie_control/sources.py` | Read-only readers. Every one returns real data or an explicit unreachable marker. Writes nothing |
 | `netie_control/render.py` | The operator page. Numbered pickup / coordinate / crew steps. An unreachable source renders its reason, never an empty panel. Live hops use `readingJson` so HTTP 404 cannot paint as a quiet reading |
 | `netie_control/static/control.css` | Operator chrome. Unread live-dot is warn (`is-unread`). Guaca/Rakazo tokens, Gastown live-dots, original layout |
-| `tests/test_control_stays_plane_4.py` | The constitution as tests - 405s, no key material, no desktop launcher, unknown never renders green |
+| `tests/test_control_stays_plane_4.py` | The constitution as tests - 405s, no key material, no desktop launcher, unknown never renders green. Talk live is `/crew/wakes`. `crew-bind` never greens. Sidecar `:8023` JSON health. |
 
 ## Reads (all read-only)
 
@@ -18,7 +18,10 @@
 | Spaceship host | `Internal/Agents/SHIP_SPACESHIP.md` | file read. Public facts only. No FTP password. Agents reopen Hosting Manager |
 | Crew conveyor | `GET {NETIE_CREW_URL}/v1/belt` and `/crew/belt` (1.5s each). Also Control `GET /v1/belt` | urllib, loopback only. Display. No handoff POST |
 | Crew laptop tools | `GET {NETIE_CREW_URL}/crew/health` (1.5s, same as belt). Slim keeps `engine_ok`. Coordinate skips this probe | urllib, loopback only. MCP name/armed/running + engine ping. Does not arm or start Cortex |
-| Crew talk | `GET {NETIE_CREW_URL}/crew/wakes` (1.5s). HTML GET `/` is not enough (hung fork still serves it). GET `/` and GET `/v1/coordinate` run talk in the same pool as other peers. Coordinate still skips `/crew/health` | urllib, loopback only. Engine converse. Does not copy Crew composer |
+| Crew talk | `GET {NETIE_CREW_URL}/crew/wakes` (1.5s). HTML GET `/` is not enough (hung fork still serves it). GET `/` and GET `/v1/coordinate` run talk in the same pool as other peers. Coordinate still skips `/crew/health`. Wake rows (kind/state/note) paint on the coordinate panel | urllib, loopback only. Engine converse. Does not copy Crew composer |
+| Sidecar host | `GET {NETIE_SIDECAR_URL}/health` then `/healthz` (1.5s, JSON). HTML GET `/` is not enough. Control `GET /v1/sidecar` | urllib, loopback only. Engine host `:8023`. Does not start or bind |
+| Sidecar catalogs | Control `GET /v1/plans` `/v1/prompts` `/v1/fetch` (ids/titles). GET `/` defers them so first paint stays fast. Fetch is loopback only | urllib. Display. Control does not run a plan |
+| Launchers | Control `GET /v1/launchers` lists name, cwd, argv. P-CTL-2 does not execute | declared. Click does nothing |
 | Skill chest | `GET {NETIE_KB_URL}/healthz` (default `:8030`, KB_WAIT_S 1.5s). Search and in-panel item show use the same cap. Hits stay on the desk | urllib, loopback only. Counts, not a runner |
 | Estate gate | `D:\Netie\Internal\Agents\estate_gate.py` (also `E:\Netie` / `NETIE_ROOT`) | subprocess, live, never cached. Desk paints first; live verdict is `GET /v1/gate` |
 | Claims board | `D:\Netie\Internal\Agents\CLAIMS.json` plus `snapshots/latest.json` titles | file read. Displayed as who/where/what via `GET /v1/fleet` |
@@ -32,9 +35,10 @@
 Cortex dedicated refusal/manifest GET (P-CTL-1 remainder; activity.governance is
 on the page), launcher execution (P-CTL-2), Crew converse
 *inside* Control (P-CTL-3; charter still display-and-launch; belt JSON is shipped).
-Pushed remote still unpushed. Disk GET / puts Cortex + OpenVault in `#hero`
-(not collapsed details). Disk contract `before_seating` lists pickup, fleet,
-you, coordinate. Disk coordinate includes `crew-bind` (`live` false);
-`GET /v1/board` is 4s fail-closed. Live `:8040` may lag until the process is reloaded. Control does not spawn
+Disk GET / puts Cortex + OpenVault in `#hero` (not collapsed details).
+Disk contract `before_seating` lists pickup, fleet, you, coordinate.
+Disk coordinate includes `crew-bind` (`live` false); talk wakes from
+`/crew/wakes`; sidecar lane is `:8023`. `GET /v1/board` is 4s fail-closed.
+Issue #5 stays OPEN. Control does not spawn
 PRD/Epic/Ticket agents and does not hand out vault credentials - those stay
 Cortex Crew and OpenVault. See `PARKING_LOT.md`.

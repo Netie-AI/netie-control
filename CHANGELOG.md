@@ -1,3 +1,11 @@
+## 2026-09-06 - Desk harden: wakes, sidecar, crew-bind
+
+Talk live stays Crew GET `/crew/wakes`. Wake rows (kind/state/note) paint
+on coordinate. HTML GET `/` is not enough (hung `:8020` still serves it).
+Sidecar `:8023` is the engine host. `crew-bind` never greens, even when
+talk and sidecar are live. Coordinate poll refreshes talk/sidecar strip
+without invent-green. Four 405s unchanged. Issue #5 stays open.
+
 ## 2026-09-04 - Crew assignments on the conveyor
 
 GET `/` paints Crew `assignments` from belt JSON. Empty is named none.
