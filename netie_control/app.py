@@ -35,26 +35,21 @@ _CONSTRUCTOR_UNREAD_HTML = (
     "<style>.absent{color:#c99a6a;font-style:italic}</style></head><body>"
     '<p class="absent">Constructor skin unread. This shell launches the sketch. '
     "Live run stays Cortex "
-    '<a href="http://127.0.0.1:8010/cortex/constructor/">'
-    "http://127.0.0.1:8010/cortex/constructor/</a>. "
+    '<a href="{live}">{live}</a>. '
     "Control is not the engine. POST /v1/run stays 405.</p>"
     "</body></html>"
 )
 
 
 def constructor_skin_dir() -> Path:
-    env = (os.environ.get("NETIE_CONSTRUCTOR_DIR") or "").strip()
-    if env:
-        return Path(env)
-    for candidate in (Path(r"E:\Constructor"), Path(r"D:\Constructor")):
-        if (candidate / "index.html").is_file():
-            return candidate
-    return Path(r"E:\Constructor")
+    return sources.constructor_root()
 
 
 def _constructor_unread() -> HTMLResponse:
     """Missing skin is a stated absence, not FastAPI JSON that looks like a crash."""
-    return HTMLResponse(_CONSTRUCTOR_UNREAD_HTML, status_code=503)
+    live = sources.constructor_live_url()
+    html = _CONSTRUCTOR_UNREAD_HTML.replace("{live}", live)
+    return HTMLResponse(html, status_code=503)
 
 
 def _constructor_file(name: str) -> Path | None:
@@ -142,6 +137,11 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
         "you": sources.you_desk,
         "surfaces": sources.desktop_surfaces_view,
         "claims": sources.claims_board,
+        "plans": sources.incomplete_plans,
+        "prompts": sources.prompt_catalog,
+        "crew_sidecar": sources.crew_sidecar_view,
+        "openide": sources.openide_view,
+        "pointer": sources.pointer_view,
     }
     if include_board:
         jobs["board"] = sources.board
@@ -263,7 +263,7 @@ def constructor_redirect() -> RedirectResponse:
 
 @router.get("/constructor/", response_model=None)
 def constructor_index() -> FileResponse | HTMLResponse:
-    """Launch Constructor sketch. Chat compiles locally. Live run stays Cortex :8010."""
+    """Launch Constructor sketch. Chat compiles locally. Live run stays Cortex."""
     path = _constructor_file("index.html")
     if path is None:
         return _constructor_unread()
@@ -293,6 +293,55 @@ def v1_pickup() -> dict[str, Any]:
     }
 
 
+@router.get("/v1/fetch")
+def v1_fetch() -> dict[str, Any]:
+    """Laptop task fetch. GitHub next + analog leftover. Control does not seat or run."""
+    reading = sources.pickup_view()
+    plans = sources.incomplete_plans()
+    data = dict(reading.data) if isinstance(reading.data, dict) else {}
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    nxt = items[0] if items and isinstance(items[0], dict) else None
+    pdata = plans.data if isinstance(plans.data, dict) else {}
+    analog = pdata.get("analog") if isinstance(pdata.get("analog"), list) else []
+    data["next"] = nxt
+    data["analog_next"] = sources.analog_work_next(analog)
+    data["analog_open"] = sum(
+        1 for row in analog if isinstance(row, dict) and row.get("verdict") == "DISTILL"
+    )
+    data["heartbeat"] = pdata.get("heartbeat") or sources.heartbeat_labels()
+    data["p1"] = "parked"
+    data["constructor_canvas"] = "http://127.0.0.1:8040/constructor/"
+    data["dms_canvas"] = sources.constructor_seeds()["dms_canvas"]
+    data["working"] = sources.working_tray()
+    data["grok"] = "offloaded. COPY none of D:\\mybot."
+    data["converse_founder"] = sources.crew_base()
+    data["seat_owner"] = "Ticket Runner. Control does not seat."
+    return {
+        "ok": bool(reading.ok),
+        "display_only": True,
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "run_owner": "Cortex",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": data,
+        "fetch_owner": "Ticket Runner + Crew. Control POST /v1/run stays 405.",
+    }
+
+
+@router.get("/v1/sidecar")
+def v1_sidecar() -> dict[str, Any]:
+    """Engine Crew :8023 health. Display only. Does not touch hung :8020."""
+    reading = sources.crew_sidecar_view()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
 @router.get("/v1/you")
 def v1_you() -> dict[str, Any]:
     """Numbered human steps. Display only. Control does not execute them."""
@@ -300,6 +349,93 @@ def v1_you() -> dict[str, Any]:
     return {
         "ok": reading.ok,
         "display_only": True,
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/plans")
+def v1_plans() -> dict[str, Any]:
+    """Analog remaining + parked lots. Display only. Control does not unpark or copy."""
+    reading = sources.incomplete_plans()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/openide")
+def v1_openide() -> dict[str, Any]:
+    """AirGPT OpenIDE liveness. Display only. Control does not run the IDE."""
+    reading = sources.openide_view()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/pointer")
+def v1_pointer() -> dict[str, Any]:
+    """Pointer confirm-gate and process present/absent. Display only. Does not start Electron."""
+    reading = sources.pointer_view()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/insights")
+def v1_insights() -> dict[str, Any]:
+    """Cortex pack/constructor ontology detection. Display only. Does not unpark P1."""
+    reading = sources.cortex_view()
+    blob = reading.data if isinstance(reading.data, dict) else {}
+    insights = dict(blob.get("insights") or {}) if isinstance(blob.get("insights"), dict) else {}
+    seeds = sources.constructor_seeds()
+    insights["constructor_seeds"] = seeds
+    insights["palantir_lite"] = seeds
+    insights["p1"] = insights.get("p1") or "parked"
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": {
+            "insights": insights,
+            "constructor_live": blob.get("constructor_live") or sources.constructor_live_url(),
+            "ontology_owner": insights.get("ontology_owner")
+            or "Ontology stays Cortex Constructor. P1 parked.",
+            "rule": "Control displays. Cortex governs. POST /v1/run stays 405.",
+        },
+    }
+
+
+@router.get("/v1/prompts")
+def v1_prompts() -> dict[str, Any]:
+    """Crew/Cortex prompt surfaces and Grok paste briefs. Display only. Does not spawn."""
+    reading = sources.prompt_catalog()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "run_owner": "Cortex",
+        "assign_owner": "GitHub Issues + CLAIMS.json",
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,

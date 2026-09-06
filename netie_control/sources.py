@@ -35,6 +35,7 @@ OPENVAULT_USAGE_WAIT_S = 1.5
 PICKUP_BOARD_WAIT_S = 1.5
 BOARD_WAIT_S = 4.0
 KB_WAIT_S = 1.5
+AIRGPT_WAIT_S = 1.5
 CORTEX_WAIT_S = 1.5
 USAGE_SUMMARY_KEYS = (
     "requests",
@@ -61,6 +62,357 @@ def _estate_root() -> Path:
 
 NETIE = _estate_root()
 AGENTS = NETIE / "Internal" / "Agents"
+CONTROL_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _cortex_root() -> Path:
+    env = os.environ.get("CORTEX_ROOT", "").strip()
+    if env:
+        return Path(env)
+    for candidate in (Path(r"D:\Cortex"), Path(r"E:\Cortex")):
+        if (candidate / "PARKING_LOT.md").is_file():
+            return candidate
+    return Path(r"D:\Cortex")
+
+
+# TAS analog map, measured 2026-09-03 on this laptop. Live trees are D:\ not E:\.
+# Verdicts match TAS/README.md. Control displays them; it does not unpark or copy.
+ANALOG_LANES: tuple[dict[str, str], ...] = (
+    {"lane": "1", "path": r"D:\Netie\mygastown", "product": "Crew",
+     "name": "Crew", "surface": "integrated", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "SHIPPED",
+     "note": "stranded/claim/wakes on engine. Hung :8020 is founder rebind"},
+    {"lane": "1b", "path": r"D:\myopenworker", "product": "Crew",
+     "name": "Crew HITL", "surface": "part", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "SHIPPED",
+     "note": "queue leases + HITL tighten-only on engine. SKIP ee/"},
+    {"lane": "1c", "path": r"D:\mydeepagents", "product": "Crew",
+     "name": "Crew harness", "surface": "part", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "ALREADY",
+     "note": "harness patterns already original on engine"},
+    {"lane": "2", "path": r"D:\Netie\myOmniRoute", "product": "OpenVault",
+     "name": "OpenVault FreeRoute", "surface": "integrated", "home": r"D:\OpenVault",
+     "verdict": "SHIPPED",
+     "note": "FreeRoute KEEP. SKIP NVIDIA/executors. HT1-HT5 HUMAN_STOP"},
+    {"lane": "3", "path": r"D:\Netie\mypaperclip", "product": "Control",
+     "name": "Control hub", "surface": "integrated", "home": r"D:\NetieControl",
+     "verdict": "SHIPPED",
+     "note": "board GET /v1/board + heartbeat on /v1/plans /v1/fetch. REFUSE analog React/:3100"},
+    {"lane": "4", "path": r"D:\Cortex\myactiveflow\myactivepieces", "product": "Constructor",
+     "name": "Constructor", "surface": "frozen", "home": r"D:\Constructor",
+     "verdict": "SKIP", "note": "BAN clone + 665 pieces. Cortex is the only engine"},
+    {"lane": "5", "path": r"D:\Cortex\Windows-MCP", "product": "Pointer",
+     "name": "Pointer catalog", "surface": "page", "home": r"D:\Pointer",
+     "verdict": "ALREADY",
+     "note": "catalog only. UACC is the OS mouse"},
+    {"lane": "6a", "path": r"D:\mygraphiti", "product": "Cortex assemble",
+     "name": "Cortex assemble", "surface": "part", "home": r"D:\Cortex",
+     "verdict": "ALREADY",
+     "note": "temporal/provenance. Ledger stays SoT"},
+    {"lane": "6b", "path": r"D:\mygraphify", "product": "Cortex assemble",
+     "name": "Cortex assemble", "surface": "part", "home": r"D:\Cortex",
+     "verdict": "ALREADY",
+     "note": "layer_confidence. SKIP as product"},
+    {"lane": "6c", "path": r"D:\myzep", "product": "Cortex assemble",
+     "name": "Cortex assemble", "surface": "frozen", "home": r"D:\Cortex",
+     "verdict": "SKIP",
+     "note": "Cloud memory vendor. COPY none"},
+    {"lane": "6d", "path": r"D:\myzep-go", "product": "Cortex assemble",
+     "name": "Cortex assemble", "surface": "frozen", "home": r"D:\Cortex",
+     "verdict": "SKIP",
+     "note": "Go SDK. COPY none"},
+    {"lane": "7a", "path": r"D:\mycogitorium", "product": "Constructor+Cortex",
+     "name": "Cortex ontology", "surface": "parked", "home": r"D:\Cortex",
+     "verdict": "PARK",
+     "note": "P1 second ontology product. COPY none"},
+    {"lane": "7b", "path": r"D:\mysemantica", "product": "Constructor+Cortex",
+     "name": "Constructor inspect", "surface": "parked", "home": r"D:\Constructor",
+     "verdict": "PARK",
+     "note": "PROV-O/decision into inspect. No hub product"},
+    {"lane": "8a", "path": r"D:\Cortex\myguaca", "product": "Crew CSS",
+     "name": "Crew CSS", "surface": "frozen", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "SKIP",
+     "note": "AGPL. COPY none. GET /stolen.css 410"},
+    {"lane": "8b", "path": r"D:\Cortex\myrakazo", "product": "Crew CSS",
+     "name": "Crew CSS", "surface": "frozen", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "SKIP",
+     "note": "memory contract only. Stop CSS paste"},
+    {"lane": "9", "path": r"D:\myOpenManus", "product": "Cortex agent_task",
+     "name": "Cortex agent_task", "surface": "part", "home": r"D:\Cortex",
+     "verdict": "SHIPPED",
+     "note": "F20b quality-terminated loop on agent_task. SKIP second agent product"},
+    {"lane": "10", "path": r"D:\Cortex\myorca", "product": "AirGPT",
+     "name": "AirGPT host", "surface": "page", "home": r"D:\AirGPT",
+     "verdict": "DISTILL",
+     "note": "mobile steer. SKIP second orchestrator"},
+    {"lane": "11", "path": r"D:\mysemble", "product": "AirGPT OpenIDE",
+     "name": "OpenIDE search", "surface": "part", "home": r"D:\AirGPT\OpenIDE",
+     "verdict": "SHIPPED",
+     "note": "token rank in search_files. SKIP second search product"},
+    {"lane": "12", "path": r"D:\myletta", "product": "Cortex /api/memory",
+     "name": "Cortex memory", "surface": "frozen", "home": r"D:\Cortex",
+     "verdict": "SKIP",
+     "note": "Do not vendor a second memory product"},
+    {"lane": "13", "path": r"D:\myn8n", "product": "Constructor",
+     "name": "Constructor", "surface": "frozen", "home": r"D:\Constructor",
+     "verdict": "BAN",
+     "note": "Not a Constructor engine. Cortex compiles"},
+    {"lane": "14", "path": r"D:\mybot", "product": "Crew+OpenVault",
+     "name": "Crew converse", "surface": "frozen", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "SKIP",
+     "note": "COPY none of analog reconstruction. Router/usage already OpenVault FreeRoute"},
+    {"lane": "15", "path": r"D:\myclaude-code-system-prompts", "product": "Crew prompts",
+     "name": "Crew prompts", "surface": "part", "home": r"D:\Cortex\CortexOS\crew",
+     "verdict": "DISTILL", "note": "Ideas only. Write original Netie text. Do not paste Anthropic prompts"},
+    {"lane": "16", "path": r"D:\myclaude-code", "product": "none",
+     "name": "none", "surface": "frozen", "home": "frozen",
+     "verdict": "BAN",
+     "note": "Leaked tree. Do not copy"},
+    {"lane": "17", "path": r"D:\mymem0", "product": "Cortex /api/memory",
+     "name": "Cortex memory", "surface": "part", "home": r"D:\Cortex",
+     "verdict": "DISTILL",
+     "note": "add/update/retrieve + scope. SKIP vendor SDK. upsert/query already exist"},
+    {"lane": "18", "path": r"D:\mymempalace", "product": "Cortex /api/memory",
+     "name": "Cortex memory", "surface": "part", "home": r"D:\Cortex",
+     "verdict": "DISTILL",
+     "note": "collection = wing/room/drawer. SKIP Chroma vendor. Verbatim store"},
+    {"lane": "19", "path": r"D:\myopencode", "product": "AirGPT OpenIDE",
+     "name": "OpenIDE leftover TUI", "surface": "page", "home": r"D:\AirGPT\OpenIDE",
+     "verdict": "SHIPPED",
+     "note": "token coalesce + OpenAI tool schema. Leftover TUI DISTILL. SKIP second IDE"},
+    {"lane": "20", "path": r"D:\OpenWillow", "product": "Pointer",
+     "name": "Pointer dictation", "surface": "part", "home": r"D:\Pointer",
+     "verdict": "DISTILL",
+     "note": "GPLv3. COPY none. Dictation/scribe/hotkey. Keys stay OpenVault"},
+)
+
+# Prompt/system-prompt surfaces. Control lists them. It does not edit them.
+PROMPT_SURFACES: tuple[dict[str, str], ...] = (
+    {
+        "id": "crew-manager",
+        "path": r"D:\Cortex\CortexOS\crew\runtime.py",
+        "product": "Crew",
+        "verdict": "ALREADY",
+        "note": "MANAGER_CHARTER is original Netie text. Improve in CortexOS/crew.",
+    },
+    {
+        "id": "crew-skills",
+        "path": r"D:\Cortex\CortexOS\crew\skill_packs",
+        "product": "Crew",
+        "verdict": "ALREADY",
+        "note": "skill_packs/*.md names only. Control does not run a skill.",
+    },
+    {
+        "id": "lane-15",
+        "path": r"D:\myclaude-code-system-prompts",
+        "product": "Crew prompts",
+        "verdict": "DISTILL",
+        "note": "Ideas only. Do not paste Anthropic prompt strings into Netie files.",
+    },
+    {
+        "id": "lane-16",
+        "path": r"D:\myclaude-code",
+        "product": "none",
+        "verdict": "BAN",
+        "note": "Leaked Claude Code tree. Do not copy.",
+    },
+)
+
+# Paste-ready Crew lane briefs. Original Netie text. Control displays
+# them. It does not spawn the agents (F-0030). WIP cap is 2.
+GROK_LANE_PASTES: tuple[dict[str, str], ...] = (
+    {
+        "id": "grok-master",
+        "product": "Crew coordinator",
+        "wip": "coordinator",
+        "paste": (
+            "You are the Netie estate coordinator. Crew converse is the chat "
+            "surface. You are not D:\\mybot. COPY none of that reconstruction.\n\n"
+            "Seat first:\n"
+            "1. GET http://127.0.0.1:8040/v1/contract\n"
+            "2. GET /v1/pickup /v1/fleet /v1/you /v1/coordinate /v1/plans "
+            "/v1/prompts /v1/fetch /v1/sidecar /v1/insights /v1/openide /v1/pointer\n"
+            "3. Claim a GitHub issue. Then CLAIMS.json. Control does not assign.\n\n"
+            "Law: Cortex runs. Crew talks. OpenVault routes. Control displays. "
+            "Pointer confirms. Constructor compiles to Cortex. OpenIDE is "
+            "D:\\AirGPT\\OpenIDE. Ontology stays Cortex. P1 parked.\n"
+            "Control POST /v1/run /v1/goal /v1/route /v1/secrets is 405.\n"
+            "WIP two epics. Paste prd-agent first from GET /v1/prompts, then "
+            "asset-guide. Then spawn at most 2 specialist pastes from GET /v1/prompts "
+            "data.pastes. Do not spawn from Control (F-0030).\n"
+            "Reuse analog segments: name TAS lane + live files. If stuck, DISTILL "
+            "the analog widget/schema/PRD slice into original Netie code. Do not "
+            "redesign UI tokens or layout DNA. Analog clones stay frozen.\n"
+            "Do not start or kill :8020, Grok Bot.exe, Cursor, or founder desktop "
+            "(R-0015). Hung converse is :8020. Engine Crew is :8023. YOU step 8 "
+            "is founder rebind.\n\n"
+            "BAN copy: D:\\mybot, D:\\myclaude-code, D:\\myn8n, D:\\OpenWillow "
+            "(GPLv3), Guaca AGPL, Activepieces 665 pieces. Do not paste Anthropic "
+            "prompt strings from D:\\myclaude-code-system-prompts.\n\n"
+            "Live products (power internally):\n"
+            "Crew D:\\Cortex\\CortexOS\\crew converse :8020 + sidecar :8023\n"
+            "OpenVault D:\\OpenVault :5000\n"
+            "Control D:\\NetieControl :8040\n"
+            "Constructor D:\\Constructor canvas. Cortex compiles.\n"
+            "Pointer D:\\Pointer confirm. UACC is the OS mouse.\n"
+            "Cortex memory/assemble D:\\Cortex /api/memory /api/context\n"
+            "OpenIDE D:\\AirGPT\\OpenIDE. SKIP second IDE.\n"
+            "Cortex agent_task F20b SHIPPED. SKIP second agent product.\n"
+            "Ontology stays Cortex Constructor. Do not unpark P1.\n\n"
+            "Next after seating: one Crew writer on D:\\Cortex and one Control "
+            "writer on D:\\NetieControl, or OpenVault playground DISTILL. "
+            "Verify: python -m pytest D:\\NetieControl\\tests -q\n"
+            "D:\\Cortex\\.venv\\Scripts\\python.exe -m pytest tests/test_crew "
+            "tests/dms/test_memory_provider.py -q"
+        ),
+    },
+    {
+        "id": "prd-agent",
+        "product": "PRD Agent",
+        "wip": "coordinator",
+        "paste": (
+            "You are the Netie PRD Agent. Read D:\\Netie\\Internal\\Agents\\"
+            "AGENT_SYSTEM.md section 1, D:\\Netie\\TAS\\README.md analog map, "
+            "and GET http://127.0.0.1:8040/v1/plans.\n\n"
+            "Portfolio (ship in the live path, not a second clone):\n"
+            "OpenVault D:\\OpenVault keys+FreeRoute+OpenShip.\n"
+            "Cortex D:\\Cortex engine+ledger+constructor compile+memory+assemble.\n"
+            "DMS D:\\DMS. Space D:\\Space. AirGPT+OpenIDE D:\\AirGPT.\n"
+            "Pointer D:\\Pointer confirm. Control D:\\NetieControl display.\n"
+            "Crew D:\\Cortex\\CortexOS\\crew converse :8020 + sidecar :8023.\n"
+            "Constructor canvas D:\\Constructor; Cortex is the only engine.\n"
+            "Ontology stays Cortex. P1 parked. Objects+links+actions stay Constructor+Cortex.\n"
+            "Read WP-003 and D:\\Netie\\Internal\\Workflow\\FUTURE_BUILD_ASSET_GUIDE.md. "
+            "Extra feature = button/tab/route on the live app. Swap semantic_layer.yaml "
+            "before a new ontology product.\n\n"
+            "Before slicing: name TAS analog lane + live files that already own "
+            "this surface. Prefer extend-live. If stuck, DISTILL one analog "
+            "segment (UI widget, DB shape, PRD slice) into original Netie code "
+            "in that live product. Analog clones stay frozen. Do not vendor them.\n"
+            "Do not redesign the UI system, tokens, or layout DNA.\n"
+            "BAN: D:\\myn8n, D:\\mybot, D:\\myclaude-code, D:\\OpenWillow GPLv3, "
+            "Guaca AGPL, Activepieces 665 pieces. Do not paste Anthropic prompts.\n"
+            "WIP two epics. Control does not spawn (F-0030). POST /v1/run stays 405."
+        ),
+    },
+    {
+        "id": "asset-guide",
+        "product": "PRD Agent",
+        "wip": "coordinator",
+        "paste": (
+            "Read D:\\Netie\\White Paper - Why\\WP-003-reuse-the-estate-do-not-rebuild.md "
+            "and D:\\Netie\\Internal\\Workflow\\FUTURE_BUILD_ASSET_GUIDE.md.\n"
+            "Live portfolio first: Cortex constructor_graph + packs/dms semantic_layer "
+            "and ontology YAML (parity), Constructor app.js/engine.js, DMS OntologyPage "
+            "tabs objects/map/metrics/actions/functions.\n"
+            "New warehouse = swap semantic_layer + logo/copy, not a new ontology product.\n"
+            "Extra feature = button, tab, or route on the live app. Analog D:\\my* is "
+            "frozen study. DISTILL one widget if stuck. Do not vendor clones.\n"
+            "Ontology stays Cortex. P1 parked. BAN n8n grok-bot Guaca AGPL OpenWillow GPL "
+            "leaked Claude Code Activepieces 665. Control POST /v1/run stays 405."
+        ),
+    },
+    {
+        "id": "crew-long-horizon",
+        "product": "Crew",
+        "wip": "writer",
+        "paste": (
+            "Seat Control GET /v1/contract then /v1/sidecar. Write-target is "
+            "D:\\Cortex\\CortexOS\\crew. Not D:\\Cortex-crew. Not a second engine.\n"
+            "queue.py and wakes.py are wired. Do not rebuild them. Mailbox cursors "
+            "and stall.py are on this tree. Do not rewrite unless a test is red.\n"
+            "Live hung converse is :8020. Do not kill it (R-0015). Engine Crew "
+            ":8023 already serves belt/wakes. start_crew.ps1 refuses a second bind.\n"
+            "SKIP Mayor/beads/LangGraph/ee/Guaca AGPL/grok-bot copy. Analog clones "
+            "stay frozen. Control never POSTs wakes. 405s stay on Control /v1/run.\n"
+            "Verify from D:\\Cortex with PYTHONPATH=D:\\Cortex:\n"
+            "python -m pytest tests/test_crew/test_wakes.py tests/test_crew/test_queue.py "
+            "tests/test_crew/test_store.py tests/test_crew/test_server.py -q"
+        ),
+    },
+    {
+        "id": "openvault-omniroute",
+        "product": "OpenVault",
+        "wip": "writer",
+        "paste": (
+            "Seat Control GET /v1/contract. Live is D:\\OpenVault :5000. Analog "
+            "D:\\Netie\\myOmniRoute is frozen. KEEP proxy/fallback/meters. "
+            "LIFT thin /playground and register help. priced=false. No invented "
+            "dollars (DR-0009). HT1-HT5 HUMAN_STOP. Do not invent a host URL.\n"
+            "SKIP NVIDIA classifier, Cursor/Copilot executors, 250-provider clone.\n"
+            "Control /v1/route stays 405. Keys stay in the vault.\n"
+            "Verify: GET http://127.0.0.1:5000/api/healthz"
+        ),
+    },
+    {
+        "id": "control-desk",
+        "product": "Control",
+        "wip": "writer",
+        "paste": (
+            "Live tree D:\\NetieControl :8040. Read D:\\Netie\\TAS\\TAS-CONTROL.md.\n"
+            "Display only. GET /v1/plans /v1/prompts /v1/fetch /v1/sidecar /v1/insights /v1/pointer stay GET. "
+            "POST /v1/run /v1/goal /v1/route /v1/secrets is 405. Do not boot "
+            "paperclip :3100. Do not copy Crew composer. Analog D:\\Netie\\mypaperclip "
+            "is distill-only -- do not edit it.\n"
+            "Talk live follows Crew GET /crew/wakes. Hung :8020 still serves HTML /. "
+            "Sidecar :8023 is the engine host. crew-bind never green. Agents do not "
+            "rebind :8020.\n"
+            "Verify: python -m pytest D:\\NetieControl\\tests\\test_control_stays_plane_4.py -q"
+        ),
+    },
+    {
+        "id": "constructor-skin",
+        "product": "Constructor",
+        "wip": "writer",
+        "paste": (
+            "Read D:\\Netie\\TAS\\TAS-CONSTRUCTOR.md. Cortex is the only engine. "
+            "Do not clone D:\\Cortex\\myactiveflow\\myactivepieces or D:\\myn8n. "
+            "Ghost writes nothing. Distill piece taxonomy only if a Cortex action "
+            "type is missing. Ontology stays Cortex. P1 parked. Objects+links+actions live "
+            "on Constructor inspect + Cortex ontology.\n"
+            "Verify Constructor compiler tests. Do not import @xyflow as the IR."
+        ),
+    },
+    {
+        "id": "pointer-hands",
+        "product": "Pointer",
+        "wip": "writer",
+        "paste": (
+            "Read D:\\Netie\\TAS\\TAS-POINTER.md. Live is D:\\Pointer. UACC is the "
+            "only OS mouse. Playwright is DOM. Windows-MCP is a catalog, not the "
+            "click driver. OpenWillow is GPLv3: distill dictation/hotkey ideas only. "
+            "COPY none. Mutating clicks stay Confirm. Keys stay OpenVault. "
+            "GET http://127.0.0.1:8040/v1/pointer lists confirm_gated from disk. "
+            "Do not start or kill founder desktop apps (R-0015)."
+        ),
+    },
+    {
+        "id": "context-memory",
+        "product": "Cortex memory",
+        "wip": "writer",
+        "paste": (
+            "Write on D:\\Cortex. LIFT Graphiti temporal/provenance into "
+            "/api/context/assemble. mem0 DISTILL add/update/retrieve+scope into "
+            "/api/memory. MemPalace DISTILL wing/room/drawer as collection. "
+            "SKIP myzep-go, Zep Cloud, mem0 SDK, Chroma, Letta product. Ledger stays SoT.\n"
+            "Verify: D:\\Cortex\\.venv\\Scripts\\python.exe -m pytest "
+            "tests/dms/test_memory_provider.py tests/test_api/test_memory_assemble.py -q"
+        ),
+    },
+    {
+        "id": "openide-search",
+        "product": "AirGPT OpenIDE",
+        "wip": "writer",
+        "paste": (
+            "OpenIDE is D:\\AirGPT\\OpenIDE, not a new repo. DISTILL Semble "
+            "query-not-grep and OpenCode session/TUI ideas. SKIP second IDE product "
+            "and embeddings product. Token rank, GitHub paste, S5 coalesce, and "
+            "OpenAI/Cursor tool JSON are the bar.\n"
+            "Verify: python -m pytest D:\\AirGPT\\OpenIDE\\tests\\test_stream_coalesce.py "
+            "D:\\AirGPT\\OpenIDE\\tests\\test_s5_tool_loop.py -q"
+        ),
+    },
+)
 
 
 @dataclass
@@ -145,15 +497,26 @@ def loopback_get_status(url: str, timeout: float = 2.0, read: int = 512) -> Read
 
 
 def cortex_base() -> str:
-    return os.environ.get("NETIE_CORTEX_URL", "http://127.0.0.1:8010").rstrip("/")
+    """Live laptop engine is :8011. Override with NETIE_CORTEX_URL."""
+    return os.environ.get("NETIE_CORTEX_URL", "http://127.0.0.1:8011").rstrip("/")
 
 
 def openvault_base() -> str:
     return os.environ.get("NETIE_OPENVAULT_URL", "http://127.0.0.1:5000").rstrip("/")
 
 
+def openvault_app_base() -> str:
+    """Local Ship/Route UI. Control lists it. It does not start :3010."""
+    return os.environ.get("NETIE_OPENVAULT_APP_URL", "http://127.0.0.1:3010").rstrip("/")
+
+
 def crew_base() -> str:
     return os.environ.get("NETIE_CREW_URL", "http://127.0.0.1:8020").rstrip("/")
+
+
+def crew_sidecar_base() -> str:
+    """Engine-tree converse that can bind while hung :8020 stays untouched."""
+    return os.environ.get("NETIE_CREW_SIDECAR_URL", "http://127.0.0.1:8023").rstrip("/")
 
 
 def control_base() -> str:
@@ -181,6 +544,13 @@ def agent_contract() -> dict[str, Any]:
             f"{base}/v1/fleet",
             f"{base}/v1/you",
             f"{base}/v1/coordinate",
+            f"{base}/v1/plans",
+            f"{base}/v1/prompts",
+            f"{base}/v1/fetch",
+            f"{base}/v1/sidecar",
+            f"{base}/v1/openide",
+            f"{base}/v1/insights",
+            f"{base}/v1/pointer",
         ],
         "assign_owner": "GitHub Issues + CLAIMS.json",
         "run_owner": "Cortex",
@@ -193,6 +563,7 @@ def agent_contract() -> dict[str, Any]:
             "board_wait_s": BOARD_WAIT_S,
             "pickup_board_wait_s": PICKUP_BOARD_WAIT_S,
             "kb_wait_s": KB_WAIT_S,
+            "airgpt_wait_s": AIRGPT_WAIT_S,
             "cortex_wait_s": CORTEX_WAIT_S,
             "crew_belt_wait_s": CREW_BELT_WAIT_S,
             "openvault_usage_wait_s": OPENVAULT_USAGE_WAIT_S,
@@ -209,15 +580,33 @@ def kb_base() -> str:
     return os.environ.get("NETIE_KB_URL", "http://127.0.0.1:8030").rstrip("/")
 
 
+def airgpt_base() -> str:
+    return os.environ.get("NETIE_AIRGPT_URL", "http://127.0.0.1:8765").rstrip("/")
+
+
+def slim_constructor_ontology(payload: dict[str, Any]) -> dict[str, Any]:
+    """Counts only. Drops object/property maps so Control never holds warehouse rows."""
+    objects = payload.get("objects")
+    places = payload.get("fetch_places")
+    actions = payload.get("actions")
+    return {
+        "object_count": len(objects) if isinstance(objects, dict) else 0,
+        "action_count": len(actions) if isinstance(actions, list) else 0,
+        "fetch_place_count": len(places) if isinstance(places, list) else 0,
+        "p1": "parked",
+    }
+
+
 def cortex_view() -> Reading:
     """Read-only Cortex probes. Does not touch the ledger; one ledger, via Cortex HTTP.
 
     Unlock for P-CTL-1: GET /health + GET /api/engine/activity including
     activity.governance (ledger tip, bound session ids, refusals; no payloads).
     Health, activity, and features share one pool at CORTEX_WAIT_S so a hung
-    /health cannot stack a second wait. A dedicated refusal-history GET is
-    still absent; Control will not scrape the chain for more than Cortex
-    already returns.
+    /health cannot stack a second wait. Control does not GET constructor
+    ontology: that 401 queues behind activity on a single uvicorn worker and
+    reads as unread. Engine up + no Control key is gated. P1 stays
+    parked.
     """
     base = cortex_base()
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -247,6 +636,20 @@ def cortex_view() -> Reading:
             "absent",
             "Cortex activity had no governance section; Control will not scrape the ledger.",
         )
+    feat_data = features.data if features.ok and isinstance(features.data, dict) else {}
+    extras = feat_data.get("extras") if isinstance(feat_data.get("extras"), dict) else {}
+    health_data = health.data if isinstance(health.data, dict) else {}
+    insights = {
+        "pack": health_data.get("pack"),
+        "agentic": extras.get("agentic") if extras else None,
+        "constructor_view": "gated",
+        "constructor_detail": "Control holds no viewer key. Ontology GET is not probed.",
+        "ontology": None,
+        "p1": "parked",
+        "palantir_lite": constructor_seeds(),
+        "constructor_seeds": constructor_seeds(),
+        "ontology_owner": "Ontology stays Cortex Constructor. P1 parked.",
+    }
     return Reading(
         ok=True,
         data={
@@ -259,6 +662,8 @@ def cortex_view() -> Reading:
             "governance": gov if gov_ok else None,
             "refusal_view": refusal_view,
             "refusal_why": refusal_why,
+            "constructor_live": constructor_live_url(),
+            "insights": insights,
         },
         source=base,
         detail="" if activity.ok else f"activity: {activity.detail}",
@@ -279,24 +684,105 @@ def slim_openvault_usage(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def slim_free_register(payload: dict[str, Any]) -> dict[str, Any]:
+    """Register help only. No vault rows. priced stays false."""
+    steps = payload.get("next_steps")
+    if not isinstance(steps, list):
+        steps = []
+    slim_steps: list[dict[str, Any]] = []
+    for row in steps[:8]:
+        if isinstance(row, dict):
+            slim_steps.append(
+                {
+                    "do": row.get("do") or row.get("step") or row.get("text"),
+                    "href": row.get("href") or row.get("register_url") or row.get("url"),
+                }
+            )
+        elif isinstance(row, str):
+            slim_steps.append({"do": row, "href": None})
+    ladder_in = payload.get("ladder")
+    slim_ladder: list[dict[str, Any]] = []
+    if isinstance(ladder_in, list):
+        for row in ladder_in[:12]:
+            if not isinstance(row, dict):
+                continue
+            slim_ladder.append(
+                {
+                    "id": row.get("id"),
+                    "kind": row.get("kind"),
+                }
+            )
+    return {
+        "priced": False if payload.get("priced") is False else payload.get("priced"),
+        "count": payload.get("count"),
+        "help": payload.get("help") if isinstance(payload.get("help"), str) else None,
+        "next_steps": slim_steps,
+        "ladder": slim_ladder,
+    }
+
+
+def slim_ship(payload: dict[str, Any]) -> dict[str, Any]:
+    """Publish/maintain liveness only. Drops repo lists, tokens, and adapter paths.
+
+    Control probes GET /api/ship/targets (local cards + OpenShip adapter), not
+    /api/ship/library (gh repo list, often slower than OPENVAULT_USAGE_WAIT_S).
+    Library-shaped payloads still slim if a test or older probe sends one.
+    """
+    conn = payload.get("connection") if isinstance(payload.get("connection"), dict) else {}
+    repos = payload.get("repos") if isinstance(payload.get("repos"), list) else []
+    openship = payload.get("openship") if isinstance(payload.get("openship"), dict) else {}
+    targets = payload.get("targets") if isinstance(payload.get("targets"), list) else []
+    connected = conn.get("connected") if conn else None
+    return {
+        "connected": connected,
+        "mode": conn.get("mode") or openship.get("effective"),
+        "login": conn.get("login"),
+        "repo_count": len(repos) if repos else None,
+        "tabs": ["folder", "github", "url", "upload"],
+        "target_count": len(targets) if targets else None,
+        "openship_effective": openship.get("effective"),
+        "human_test_gate": payload.get("human_test_gate"),
+        "live_url_observed": payload.get("live_url_observed"),
+        "publish_owner": "OpenVault OpenShip",
+        "rule": "Control does not publish. POST /v1/run stays 405. Do not start :3010. HT1 stays human.",
+    }
+
+
 def openvault_view() -> Reading:
     """Display FreeRoute/vault liveness and spend counts. Does not choose a route.
 
-    Healthz and usage run in parallel at OPENVAULT_USAGE_WAIT_S so a hung
-    peer cannot stack 2s + 1.5s on GET /.
+    Healthz, usage, free-register help, ship targets, and :3010 playground
+    run in parallel at OPENVAULT_USAGE_WAIT_S so a hung peer cannot stack
+    waits on GET /. Control does not start :3010.
     """
     base = openvault_base()
+    app_base = openvault_app_base()
     health_url = f"{base}/api/healthz"
     usage_url = f"{base}/api/usage?limit=1"
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    free_url = f"{base}/api/providers/free"
+    ship_url = f"{base}/api/ship/targets"
+    play_url = f"{app_base}/"
+    with ThreadPoolExecutor(max_workers=5) as pool:
         health_f = pool.submit(
             loopback_get_json, health_url, OPENVAULT_USAGE_WAIT_S
         )
         usage_f = pool.submit(
             loopback_get_json, usage_url, OPENVAULT_USAGE_WAIT_S
         )
+        free_f = pool.submit(
+            loopback_get_json, free_url, OPENVAULT_USAGE_WAIT_S
+        )
+        ship_f = pool.submit(
+            loopback_get_json, ship_url, OPENVAULT_USAGE_WAIT_S
+        )
+        play_f = pool.submit(
+            loopback_get_status, play_url, OPENVAULT_USAGE_WAIT_S
+        )
         healthz = health_f.result()
         usage = usage_f.result()
+        free = free_f.result()
+        ship = ship_f.result()
+        play = play_f.result()
     if not healthz.ok:
         return healthz
     status = (healthz.data or {}).get("status")
@@ -306,6 +792,26 @@ def openvault_view() -> Reading:
         usage_data = slim_openvault_usage(usage.data)
     else:
         usage_detail = usage.detail or "usage unread"
+    register = None
+    register_detail = ""
+    if free.ok and isinstance(free.data, dict):
+        register = slim_free_register(free.data)
+    else:
+        register_detail = free.detail or "register help unread"
+    ship_data = None
+    ship_detail = ""
+    if ship.ok and isinstance(ship.data, dict):
+        ship_data = slim_ship(ship.data)
+    else:
+        ship_detail = ship.detail or "ship unread"
+    playground = {
+        "up": play.ok,
+        "href": play_url,
+        "vault": f"{app_base}/vault",
+        "playground": f"{app_base}/playground",
+        "detail": "" if play.ok else (play.detail or "OpenVault app unread"),
+        "rule": "Control does not start :3010. npm run dev in D:\\OpenVault\\apps\\web.",
+    }
     return Reading(
         ok=True,
         data={
@@ -313,6 +819,11 @@ def openvault_view() -> Reading:
             "healthz": healthz.data,
             "usage": usage_data,
             "usage_detail": usage_detail,
+            "register": register,
+            "register_detail": register_detail,
+            "ship": ship_data,
+            "ship_detail": ship_detail,
+            "playground": playground,
             "custody_owner": "OpenVault",
             "request_path": "OpenVault. Control /v1/secrets answers 405.",
         },
@@ -366,41 +877,49 @@ def crew_belt_view() -> Reading:
     """Display-only GET of Crew conveyor JSON. Control does not converse.
 
     Live :8020 is still the Cortex-crew fork: /v1/belt can hang and /crew/belt
-    can 404. Probe both with a short timeout. Prefer /v1/belt when it answers.
-    Named absence if neither does. No POST handoff.
+    can 404. Probe fork and engine sidecar in one pool. Prefer :8020 when it
+    answers. Named absence if none do. No POST handoff. Does not kill :8020.
     """
     base = crew_base()
-    v1 = f"{base}/v1/belt"
-    alt = f"{base}/crew/belt"
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="crew-belt") as pool:
-        first = pool.submit(loopback_get_json, v1, CREW_BELT_WAIT_S)
-        second = pool.submit(loopback_get_json, alt, CREW_BELT_WAIT_S)
-        primary = first.result()
-        fallback = second.result()
-    if primary.ok:
-        return primary
-    if fallback.ok:
-        return fallback
-    why = (
-        f"{primary.detail or 'unread'}; "
-        f"tried {alt}: {fallback.detail or 'unread'}"
-    )
-    return Reading.unreachable(v1, why)
+    side = crew_sidecar_base()
+    urls = [f"{base}/v1/belt", f"{base}/crew/belt"]
+    if side != base:
+        urls.extend([f"{side}/v1/belt", f"{side}/crew/belt"])
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="crew-belt") as pool:
+        futs = [pool.submit(loopback_get_json, url, CREW_BELT_WAIT_S) for url in urls]
+        readings = [fut.result() for fut in futs]
+    for reading in readings:
+        if reading.ok:
+            return reading
+    bits = [readings[0].detail or "unread"]
+    for url, reading in zip(urls[1:], readings[1:], strict=True):
+        bits.append(f"tried {url}: {reading.detail or 'unread'}")
+    return Reading.unreachable(urls[0], "; ".join(bits))
 
 
 def crew_talk_view() -> Reading:
     """Engine converse host. Does not copy Crew HTML (F-0026).
 
     The hung Cortex-crew fork still answers GET / in tens of ms and hangs
-    `/crew/health`. `/crew/wakes` 404s on that fork and 200s on engine Crew.
-    Talk must not go green on HTML-only (R-0011).
+    `/crew/health`. `/crew/wakes` 404s on that fork and 200s on engine Crew
+    :8023. Talk must not go green on HTML-only (R-0011). Sidecar fallback
+    does not kill :8020 (R-0015).
     """
-    wakes = f"{crew_base()}/crew/wakes"
-    raw = loopback_get_json(wakes, timeout=CREW_BELT_WAIT_S)
-    if not raw.ok:
-        why = raw.detail or "wakes unread"
-        return Reading.unreachable(wakes, why)
-    return Reading(ok=True, data={"up": True, "wakes": True}, source=wakes)
+    base = crew_base()
+    side = crew_sidecar_base()
+    urls = [f"{base}/crew/wakes"]
+    if side != base:
+        urls.append(f"{side}/crew/wakes")
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="crew-talk") as pool:
+        futs = [pool.submit(loopback_get_json, url, CREW_BELT_WAIT_S) for url in urls]
+        readings = [fut.result() for fut in futs]
+    for reading in readings:
+        if reading.ok:
+            return Reading(ok=True, data={"up": True, "wakes": True}, source=reading.source)
+    why = readings[0].detail or "wakes unread"
+    if len(readings) > 1:
+        why = f"{why}; tried {urls[1]}: {readings[1].detail or 'unread'}"
+    return Reading.unreachable(urls[0], why)
 
 
 def slim_crew_health(payload: dict[str, Any]) -> dict[str, Any]:
@@ -437,7 +956,27 @@ def slim_crew_health(payload: dict[str, Any]) -> dict[str, Any]:
         "engine_ok": engine.get("ok"),
         "engine_url": engine.get("url"),
         "engine_detail": engine.get("detail"),
+        "wake_tick_at": payload.get("wake_tick_at"),
     }
+
+
+def constructor_live_url() -> str:
+    """Cortex Constructor mount. Control serves the sketch; Cortex is the engine."""
+    env = (os.environ.get("NETIE_CONSTRUCTOR_URL") or "").strip()
+    if env:
+        return env.rstrip("/") + "/"
+    return f"{cortex_base()}/cortex/constructor/"
+
+
+def constructor_root() -> Path:
+    """Constructor sketch dir. Control serves files from here. Cortex compiles."""
+    env = (os.environ.get("NETIE_CONSTRUCTOR_DIR") or "").strip()
+    if env:
+        return Path(env)
+    for candidate in (Path(r"D:\Constructor"), Path(r"E:\Constructor")):
+        if (candidate / "index.html").is_file():
+            return candidate
+    return Path(r"D:\Constructor")
 
 
 def crew_health_view(timeout: float = CREW_BELT_WAIT_S) -> Reading:
@@ -447,18 +986,132 @@ def crew_health_view(timeout: float = CREW_BELT_WAIT_S) -> Reading:
     UACC is the OS mouse. Playwright is the Chrome DOM. Control never POSTs
     an arming route and never copies vault material from Crew's payload.
     Caps at CREW_BELT_WAIT_S so a hung fork cannot stall GET /. Talk liveness
-    is crew_talk_view. Coordinate skips this probe.
+    is crew_talk_view. Coordinate skips this probe. Sidecar :8023 is probed
+    in the same pool. Does not kill :8020 (R-0015).
     """
-    raw = loopback_get_json(f"{crew_base()}/crew/health", timeout=timeout)
+    base = crew_base()
+    side = crew_sidecar_base()
+    urls = [f"{base}/crew/health"]
+    if side != base:
+        urls.append(f"{side}/crew/health")
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="crew-health") as pool:
+        futs = [pool.submit(loopback_get_json, url, timeout) for url in urls]
+        readings = [fut.result() for fut in futs]
+    for reading in readings:
+        if reading.ok and isinstance(reading.data, dict):
+            return Reading(
+                ok=True,
+                data=slim_crew_health(reading.data),
+                source=reading.source,
+            )
+    why = readings[0].detail or "unread"
+    if len(readings) > 1:
+        why = f"{why}; tried {urls[1]}: {readings[1].detail or 'unread'}"
+    return Reading.unreachable(urls[0], why)
+
+
+def crew_sidecar_view(timeout: float = CREW_BELT_WAIT_S) -> Reading:
+    """Engine Crew on :8023. Does not start, stop, or rebind hung :8020.
+
+    Health and wakes share one pool. Empty wakes is none, not unread. Control
+    never POSTs /crew/wakes. The sidecar tick owns 24/7 fire.
+    """
+    base = crew_sidecar_base()
+    health_url = f"{base}/crew/health"
+    wakes_url = f"{base}/crew/wakes"
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="crew-sidecar") as pool:
+        health_f = pool.submit(loopback_get_json, health_url, timeout)
+        wakes_f = pool.submit(loopback_get_json, wakes_url, timeout)
+        raw = health_f.result()
+        wakes = wakes_f.result()
     if not raw.ok:
         return raw
     payload = raw.data if isinstance(raw.data, dict) else {}
-    return Reading(ok=True, data=slim_crew_health(payload), source=raw.source)
+    data = slim_crew_health(payload)
+    data["converse"] = base
+    data["fork"] = crew_base()
+    rows = []
+    if wakes.ok and isinstance(wakes.data, dict):
+        raw_wakes = wakes.data.get("wakes")
+        if isinstance(raw_wakes, list):
+            rows = raw_wakes
+        data["wakes_n"] = len(rows)
+        data["wakes_view"] = "none" if not rows else "present"
+        data["wakes_detail"] = ""
+    else:
+        data["wakes_n"] = None
+        data["wakes_view"] = "unread"
+        data["wakes_detail"] = wakes.detail or "wakes unread"
+    data["rule"] = (
+        "Sidecar is engine Crew. Hung converse stays :8020 until YOU step 8. "
+        "Agents must not kill :8020 (R-0015). Control does not POST wakes."
+    )
+    return Reading(ok=True, data=data, source=raw.source)
 
 
 def kb_view() -> Reading:
     """Liveness of the one skill registry. Counts only. No artifact bodies."""
     return loopback_get_json(f"{kb_base()}/healthz", timeout=KB_WAIT_S)
+
+
+def slim_openide_ready(payload: dict[str, Any]) -> dict[str, Any]:
+    """Flags only. Drop vault/token fields if a ready payload carries them."""
+    missing = payload.get("missing")
+    if not isinstance(missing, list):
+        missing = []
+    return {
+        "ok": payload.get("ok"),
+        "backend": payload.get("backend"),
+        "need": payload.get("need") if isinstance(payload.get("need"), str) else None,
+        "usable_count": payload.get("usable_count"),
+        "missing": [str(x) for x in missing[:12]],
+    }
+
+
+def openide_view() -> Reading:
+    """AirGPT OpenIDE liveness. Display only. Control does not run the IDE.
+
+    Health and /api/openide/ready share one pool at AIRGPT_WAIT_S. Unreachable
+    host is unread, not a quiet empty IDE. Does not start clipdrop (R-0015 for
+    founder desktop still holds; this probe is GET only).
+    """
+    base = airgpt_base()
+    health_url = f"{base}/api/health"
+    ready_url = f"{base}/api/openide/ready"
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="openide") as pool:
+        health_f = pool.submit(loopback_get_json, health_url, AIRGPT_WAIT_S)
+        ready_f = pool.submit(loopback_get_json, ready_url, AIRGPT_WAIT_S)
+        health = health_f.result()
+        ready = ready_f.result()
+    if not health.ok:
+        return health
+    payload = health.data if isinstance(health.data, dict) else {}
+    up = payload.get("ok") is True or payload.get("service") == "airgpt"
+    if not up:
+        return Reading.unreachable(health_url, "AirGPT health did not report ok")
+    ready_data = None
+    ready_detail = ""
+    if ready.ok and isinstance(ready.data, dict):
+        ready_data = slim_openide_ready(ready.data)
+    else:
+        ready_detail = ready.detail or "ready unread"
+    return Reading(
+        ok=True,
+        data={
+            "up": True,
+            "service": payload.get("service") or "airgpt",
+            "href": f"{base}/OpenIDE/ui/",
+            "host": base,
+            "ready": ready_data,
+            "ready_detail": ready_detail,
+            "rule": (
+                "OpenIDE is D:\\AirGPT\\OpenIDE. Control lists it. "
+                "It does not run the IDE. POST /v1/run stays 405."
+            ),
+            "leftover": "OpenIDE leftover TUI. SKIP second IDE.",
+        },
+        source=health_url,
+    )
 
 
 def kb_search(q: str, limit: int = 8) -> Reading:
@@ -704,9 +1357,9 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
     {
         "n": "1",
         "id": "hold-dms-61",
-        "title": "Lift estate hold in FLEET.md",
-        "do": "Named hold dms#61. The PR is MERGED. Control did not invent this. "
-             "Edit FLEET.md yourself. MERGEABLE is not permission.",
+        "title": "dms#61 hold is lifted",
+        "do": "Named hold dms#61 is LIFTED (E11 on main 2026-08-24). "
+             "MERGEABLE is still not permission for any other hold.",
         "url": "https://github.com/Netie-AI/dms/pull/61",
         "kind": "you",
     },
@@ -775,10 +1428,11 @@ HITL_STEPS: tuple[dict[str, str], ...] = (
         "n": "8",
         "id": "crew-engine-bind",
         "title": "Bind live :8020 to engine Crew",
-        "do": "Live converse is still the Cortex-crew fork. Belt /v1/belt hangs; "
-             "/crew/belt 404s. Stop that hung process yourself, then start "
-             "python -m CortexOS.crew from E:\\Cortex (scripts\\start_crew.ps1). "
-             "Agents must not start or kill it (R-0015). Control stays display-only.",
+        "do": "Live converse is still the hung fork on :8020. Belt may 404. "
+             "Stop that hung process yourself, then start "
+             "python -m CortexOS.crew from D:\\Cortex (scripts\\start_crew.ps1). "
+             "Night keep-alive is D:\\Cortex\\scripts\\night_watch.ps1 for sidecar :8023. "
+             "Agents must not start or kill :8020 (R-0015). Control stays display-only.",
         "url": "http://127.0.0.1:8020",
         "kind": "you",
     },
@@ -971,6 +1625,379 @@ def pickup_view(*, board_wait: float | None = None) -> Reading:
     return pickup_from_readings(fleet, board)
 
 
+_PARK_HEAD = re.compile(
+    r"^## (P(?:-CTL)?-?\d+[a-z]?)\s*[—–-]\s*(.+)$",
+    re.MULTILINE,
+)
+
+
+def prompt_catalog() -> Reading:
+    """Where prompts live. Display only. Control does not rewrite a charter."""
+    rows: list[dict[str, Any]] = []
+    for surf in PROMPT_SURFACES:
+        path = Path(surf["path"])
+        files: list[str] = []
+        if surf["id"] == "crew-skills" and path.is_dir():
+            files = sorted(p.name for p in path.glob("*.md"))[:40]
+        rows.append(
+            {
+                "kind": "prompt",
+                "id": surf["id"],
+                "path": surf["path"],
+                "product": surf["product"],
+                "verdict": surf["verdict"],
+                "note": surf["note"],
+                "tree": "present" if path.exists() else "absent",
+                "files": files,
+            }
+        )
+    distill = [row for row in rows if row["verdict"] == "DISTILL"]
+    banned = [row for row in rows if row["verdict"] == "BAN"]
+    pastes = [
+        {
+            "kind": "paste",
+            "id": item["id"],
+            "product": item["product"],
+            "wip": item["wip"],
+            "paste": item["paste"],
+        }
+        for item in GROK_LANE_PASTES
+    ]
+    return Reading(
+        ok=True,
+        data={
+            "items": rows,
+            "count": len(rows),
+            "open": len(distill),
+            "distill": distill,
+            "banned": banned,
+            "pastes": pastes,
+            "wip_cap": 2,
+            "spawn_owner": "Crew chat. Control does not spawn (F-0030).",
+            "rule": (
+                "Prompts is display. Paste grok-master, then prd-agent, then at most "
+                "2 writer pastes. Reuse analog segments in the live product. "
+                "Do not redesign UI tokens/layout. Improve Crew charters and "
+                "skill_packs in Cortex. Do not paste Anthropic text. Control does "
+                "not edit prompts. POST /v1/run stays 405."
+            ),
+        },
+        source="TAS prompt surfaces",
+        detail=f"{len(distill)} DISTILL, {len(banned)} BAN, {len(pastes)} pastes",
+    )
+
+
+def constructor_seeds() -> dict[str, str]:
+    """Constructor rail seeds: define data, govern agents, insights. No HTTP."""
+    return {
+        "p1": "parked",
+        "define_data": (
+            "POST /cortex/constructor/generate prompt define data -> ontology+insight"
+        ),
+        "govern_agents": (
+            "generate govern agents -> action=agent.checked "
+            "kinds connector,ontology,agent,audit"
+        ),
+        "business_insights": (
+            "generate business insights -> Constructor compile + insight"
+        ),
+        "engine": "Cortex Constructor. Control does not POST generate.",
+        "dms_canvas": (
+            "DMS Ontology header Constructor canvas -> "
+            "http://127.0.0.1:8040/constructor/"
+        ),
+        "guide": r"D:\Netie\Internal\Workflow\FUTURE_BUILD_ASSET_GUIDE.md",
+    }
+
+
+def palantir_lite() -> dict[str, str]:
+    """Alias for constructor_seeds. Live name is Constructor seeds."""
+    return constructor_seeds()
+
+
+def heartbeat_labels() -> list[dict[str, str]]:
+    """Name live probes. No extra HTTP. Control does not start peers."""
+    return [
+        {"product": "Cortex", "href": f"{cortex_base()}/health", "role": "engine"},
+        {"product": "Control", "href": "/healthz", "role": "hub"},
+        {
+            "product": "Crew converse",
+            "href": f"{crew_base()}/crew/health",
+            "role": "founder rebind",
+        },
+        {
+            "product": "Crew sidecar",
+            "href": f"{crew_sidecar_base()}/crew/health",
+            "role": "tick",
+        },
+        {
+            "product": "OpenVault",
+            "href": f"{openvault_base()}/api/healthz",
+            "role": "keys",
+        },
+        {
+            "product": "Constructor",
+            "href": constructor_live_url(),
+            "role": "canvas",
+        },
+        {"product": "Pointer", "href": "/v1/pointer", "role": "confirm gated"},
+    ]
+
+
+def analog_work_next(
+    analog: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """First leftover DISTILL lift. PARK/BAN are not next. Control does not seat."""
+    rows = analog if analog is not None else analog_catalog()
+    distill = [r for r in rows if isinstance(r, dict) and r.get("verdict") == "DISTILL"]
+    present = [r for r in distill if r.get("tree") == "present"]
+    pick = (present or distill or [None])[0]
+    if not isinstance(pick, dict):
+        return None
+    return {
+        "kind": "analog",
+        "lane": pick.get("lane"),
+        "path": pick.get("path"),
+        "product": pick.get("product"),
+        "verdict": "DISTILL",
+        "note": pick.get("note"),
+        "tree": pick.get("tree"),
+        "name": pick.get("name") or pick.get("product"),
+        "surface": pick.get("surface") or "part",
+        "home": pick.get("home"),
+        "href": "/v1/plans",
+        "rule": (
+            "Control displays leftover DISTILL. Ticket Runner seats GitHub. "
+            "Analog clones stay frozen. Ontology stays Cortex. P1 parked."
+        ),
+    }
+
+
+def _peer_stamp(
+    *,
+    product: str,
+    href: str,
+    role: str,
+    reading: Reading,
+    up_key: str = "up",
+) -> dict[str, Any]:
+    """Unread is not green. Control does not start the peer."""
+    row: dict[str, Any] = {
+        "product": product,
+        "href": href,
+        "role": role,
+        "up": False,
+        "state": "unread",
+        "detail": reading.detail or "unread",
+    }
+    if not reading.ok:
+        return row
+    data = reading.data if isinstance(reading.data, dict) else {}
+    live = bool(data[up_key]) if up_key in data else True
+    row["up"] = live
+    row["state"] = "live" if live else "down"
+    row["detail"] = str(data.get("detail") or "")
+    if "confirm_gated" in data:
+        row["confirm_gated"] = bool(data["confirm_gated"])
+    return row
+
+
+def working_tray() -> list[dict[str, Any]]:
+    """Laptop fetch peers. Display only. Does not start OpenIDE, Pointer, or :3010."""
+    sketch = constructor_root() / "index.html"
+    with ThreadPoolExecutor(max_workers=5, thread_name_prefix="fetch-work") as pool:
+        cx = pool.submit(cortex_view)
+        sc = pool.submit(crew_sidecar_view)
+        ov = pool.submit(openvault_view)
+        ide = pool.submit(openide_view)
+        ptr = pool.submit(pointer_view)
+        cortex = cx.result()
+        sidecar = sc.result()
+        vault = ov.result()
+        openide = ide.result()
+        pointer = ptr.result()
+    ov_data = vault.data if vault.ok and isinstance(vault.data, dict) else {}
+    register = ov_data.get("register") if isinstance(ov_data.get("register"), dict) else {}
+    ov_row = _peer_stamp(
+        product="OpenVault free",
+        href=f"{openvault_base()}/api/providers/free",
+        role="priced=false",
+        reading=vault,
+    )
+    if register:
+        ov_row["priced"] = register.get("priced")
+        if ov_row["state"] == "live":
+            ov_row["detail"] = f"priced={register.get('priced')}"
+    ctor_up = sketch.is_file()
+    sidecar_row = _peer_stamp(
+        product="Crew sidecar",
+        href=crew_sidecar_base(),
+        role="tick",
+        reading=sidecar,
+    )
+    if sidecar.ok and isinstance(sidecar.data, dict):
+        sidecar_row["wakes_n"] = sidecar.data.get("wakes_n")
+        sidecar_row["wakes_view"] = sidecar.data.get("wakes_view")
+        sidecar_row["detail"] = (
+            f"wakes {sidecar.data.get('wakes_view') or 'unread'} "
+            f"n={sidecar.data.get('wakes_n')}"
+        )
+    return [
+        _peer_stamp(
+            product="Cortex",
+            href=f"{cortex_base()}/health",
+            role="engine",
+            reading=cortex,
+        ),
+        {
+            "product": "Constructor",
+            "href": "http://127.0.0.1:8040/constructor/",
+            "role": "canvas",
+            "up": ctor_up,
+            "state": "live" if ctor_up else "unread",
+            "detail": (
+                f"sketch. Cortex compiles {constructor_live_url()}"
+                if ctor_up
+                else "Constructor skin unread"
+            ),
+        },
+        sidecar_row,
+        ov_row,
+        _peer_stamp(
+            product="OpenIDE",
+            href=f"{airgpt_base()}/OpenIDE/ui/",
+            role="live",
+            reading=openide,
+        ),
+        _peer_stamp(
+            product="Pointer",
+            href="/v1/pointer",
+            role="confirm_gated",
+            reading=pointer,
+        ),
+    ]
+
+
+def analog_catalog() -> list[dict[str, Any]]:
+    """Every analog tree TAS names, plus whether it is on this disk."""
+    rows: list[dict[str, Any]] = []
+    for lane in ANALOG_LANES:
+        path = Path(lane["path"])
+        rows.append(
+            {
+                "kind": "analog",
+                "lane": lane["lane"],
+                "path": lane["path"],
+                "product": lane["product"],
+                "name": lane.get("name") or lane["product"],
+                "surface": lane.get("surface") or "part",
+                "home": lane.get("home") or "",
+                "verdict": lane["verdict"],
+                "note": lane["note"],
+                "tree": "present" if path.exists() else "absent",
+            }
+        )
+    return rows
+
+
+def _parking_open(path: Path, product: str) -> tuple[list[dict[str, Any]], str]:
+    """Parked headings that still have remaining work. Missing file is unread."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], "absent"
+    except OSError as exc:
+        return [], f"unreadable: {exc}"
+    items: list[dict[str, Any]] = []
+    parts = re.split(r"(?m)^(?=## P)", text)
+    for part in parts:
+        match = _PARK_HEAD.match(part)
+        if not match:
+            continue
+        pid, title = match.group(1), match.group(2).strip()
+        body = part.lower()
+        remaining = any(
+            token in body
+            for token in ("still parked", "still open", "remaining:", "**remaining**")
+        )
+        condition = "condition:" in body
+        shipped = "shipped" in body
+        if shipped and not remaining and not condition:
+            continue
+        items.append(
+            {
+                "kind": "parking",
+                "id": pid,
+                "title": title[:160],
+                "product": product,
+                "state": "parked" if (remaining or condition) else "open",
+                "source": str(path),
+            }
+        )
+    return items[:40], "ok"
+
+
+def incomplete_plans() -> Reading:
+    """Unfinished analog lifts + parked lots across repos. Display only. No HTTP.
+
+    Pickup is GitHub/CLAIMS seats. This tray is TAS analog remaining plus
+    PARKING_LOT headings that still have a condition or remaining work.
+    Control does not unpark P1 and does not clone analog workflow engines.
+    """
+    analog = analog_catalog()
+    cortex_lot = _cortex_root() / "PARKING_LOT.md"
+    control_lot = CONTROL_ROOT / "PARKING_LOT.md"
+    parking: list[dict[str, Any]] = []
+    unread: list[str] = []
+    for path, product in ((cortex_lot, "Cortex"), (control_lot, "Control")):
+        rows, status = _parking_open(path, product)
+        if status != "ok":
+            unread.append(f"{path}: {status}")
+            continue
+        parking.extend(rows)
+    open_analog = [
+        row
+        for row in analog
+        if row["verdict"] in {"DISTILL", "PARK"} or row["tree"] == "absent"
+    ]
+    items: list[dict[str, Any]] = []
+    items.extend(open_analog)
+    items.extend(parking)
+    open_n = len(items)
+    analog_absent = sum(1 for row in analog if row["tree"] == "absent")
+    analog_present = sum(1 for row in analog if row["tree"] == "present")
+    detail_bits: list[str] = []
+    if analog_absent:
+        detail_bits.append(f"{analog_absent} analog trees absent")
+    if unread:
+        detail_bits.append("parking unread: " + "; ".join(unread))
+    if open_n == 0:
+        detail_bits.append("none")
+    return Reading(
+        ok=True,
+        data={
+            "items": items[:80],
+            "count": min(open_n, 80),
+            "open": min(open_n, 80),
+            "none": open_n == 0,
+            "analog": analog,
+            "analog_present": analog_present,
+            "analog_absent": analog_absent,
+            "heartbeat": heartbeat_labels(),
+            "parking": parking,
+            "parking_unread": unread,
+            "rule": (
+                "Plans is display. Analog clones stay frozen. Control does not "
+                "unpark P1, does not copy analog reconstructions/AGPL/GPL/leaked "
+                "trees, and does not clone analog workflow engines. Claim on "
+                "GitHub. POST /v1/run stays 405."
+            ),
+        },
+        source="TAS analog + PARKING_LOT",
+        detail="; ".join(detail_bits),
+    )
+
+
 def fleet_view() -> Reading:
     """CLAIMS seats plus snapshot titles. Control does not write the board."""
     claims = claims_board()
@@ -1056,6 +2083,7 @@ _SURFACE_IMAGES = (
     ("Grok Bot.exe", "Grok Bot"),
     ("claude.exe", "Claude Code"),
     ("Cursor.exe", "Cursor"),
+    ("Pointer.exe", "Pointer"),
 )
 
 _TH32CS_SNAPPROCESS = 0x00000002
@@ -1141,6 +2169,62 @@ def desktop_surfaces_view() -> Reading:
     )
 
 
+def pointer_root() -> Path:
+    env = os.environ.get("POINTER_ROOT", "").strip()
+    if env:
+        return Path(env)
+    for candidate in (Path(r"D:\Pointer"), Path(r"E:\Pointer")):
+        if (candidate / "electron" / "netie" / "plan-guard.js").is_file():
+            return candidate
+    return Path(r"D:\Pointer")
+
+
+def pointer_view() -> Reading:
+    """Pointer confirm-gate from disk + process present/absent. Does not start Electron."""
+    root = pointer_root()
+    guard = root / "electron" / "netie" / "plan-guard.js"
+    if not guard.is_file():
+        return Reading.unreachable(str(guard), "Pointer plan-guard unread")
+    try:
+        text = guard.read_text(encoding="utf-8")
+    except OSError as exc:
+        return Reading.unreachable(str(guard), f"unreachable: {exc}")
+    confirm_gated = "_requireConfirm: true" in text
+    modes = root / "docs" / "MODES.md"
+    nod_confirm = False
+    if modes.is_file():
+        try:
+            nod_confirm = "Nod confirm" in modes.read_text(encoding="utf-8")
+        except OSError:
+            nod_confirm = False
+    live = False
+    live_detail = ""
+    try:
+        live = bool(_win_running_images({"pointer.exe", "netie-pointer.exe"}))
+    except OSError as exc:
+        live_detail = f"process unread: {exc}"
+    detail = ""
+    if not confirm_gated:
+        detail = "plan-guard.js missing _requireConfirm"
+    elif live_detail:
+        detail = live_detail
+    return Reading(
+        ok=True,
+        data={
+            "up": live,
+            "confirm_gated": confirm_gated,
+            "nod_confirm": nod_confirm,
+            "tree": str(root),
+            "rule": (
+                "Pointer is HUD + Cortex POST /dms/secure. UACC is the only OS mouse. "
+                "Control does not start Pointer (R-0015). POST /v1/run stays 405."
+            ),
+            "detail": detail,
+        },
+        source=str(guard),
+    )
+
+
 def _reading_live(reading: dict[str, Any], key: str = "up") -> bool:
     """A peer is live only if we read it and it said so. Unread is not green."""
     if not isinstance(reading, dict) or not reading.get("ok"):
@@ -1196,6 +2280,7 @@ def coordinate_teammates(
         ("Cursor", "cursor", "#pc"),
         ("Claude Code", "claude", "#pads"),
         ("Grok Bot", "grok", crew),
+        ("Pointer", "pointer", "#pointer"),
     ):
         mates.append(
             {

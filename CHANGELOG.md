@@ -1,3 +1,27 @@
+## 2026-09-03 - OpenVault playground + Pointer confirm-gate
+
+GET /v1/pointer lists Pointer plan-guard `_requireConfirm` from disk and
+Pointer.exe present/absent. Control does not start Electron (R-0015).
+OpenVault view probes :3010 in the same 1.5s pool as healthz/usage/free/ship.
+Desk paints /vault and /playground. Control does not start :3010. Four 405s
+unchanged.
+
+## 2026-09-03 - Grok/Crew paste briefs on GET /v1/prompts
+
+GET /v1/prompts now lists paste-ready grok-master plus writer lanes
+(Crew, OpenVault, Control, Constructor, Pointer, memory, OpenIDE).
+WIP cap is 2. Control does not spawn. POST is not 200. Four 405s
+unchanged. Does not copy grok-bot, Anthropic strings, n8n, or AGPL.
+Belt/talk/health probe engine :8023 in the same 1.5s pool when hung :8020
+404s or hangs. Constructor live href follows NETIE_CORTEX_URL. Does not
+kill :8020. GET /v1/openide lists AirGPT OpenIDE liveness (display only).
+
+## 2026-09-03 - Incomplete plans hub
+
+GET /v1/plans lists analog clone remaining work (D:\\ trees) plus open
+PARKING_LOT headings. Display only. POST is not 200. Four 405s unchanged.
+Does not unpark P1. Does not copy grok-bot, AGPL, GPL, or leaked Claude Code.
+
 ## 2026-09-03 - GET /v1/state stays display-only
 
 Desk JSON skips gate, gh board, and pads. POST is not 200. Four 405s

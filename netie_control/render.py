@@ -11,6 +11,8 @@ import html
 from pathlib import Path
 from typing import Any
 
+from netie_control.sources import constructor_live_url, constructor_seeds
+
 _CSS_PATH = Path(__file__).with_name("static") / "control.css"
 
 
@@ -42,7 +44,7 @@ def _panel(title: str, reading: dict[str, Any], body_fn, extra: str = "", panel_
     cls = "panel" + (f" {extra}" if extra else "")
     id_attr = f' id="{html.escape(panel_id)}"' if panel_id else ""
     badge = f' <span class="count">{_esc(count)}</span>' if count else ""
-    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads"} else ""
+    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads", "plans", "prompts", "openide", "pointer"} else ""
     wrap_open = f'<div id="{html.escape(wrap_id)}">' if wrap_id else ""
     wrap_close = "</div>" if wrap_id else ""
     if not reading.get("ok"):
@@ -206,6 +208,133 @@ def _pickup_body(d: Any) -> str:
     return "".join(bits)
 
 
+def _plans_body(d: Any) -> str:
+    d = d or {}
+    analog = [r for r in (d.get("analog") or []) if isinstance(r, dict)]
+    items = [r for r in (d.get("items") or []) if isinstance(r, dict)]
+    bits: list[str] = [
+        "<p>Incomplete plans - analog lifts and parked lots. Control does not unpark or copy.</p>",
+        '<ol class="steps">',
+        "<li>DISTILL/PARK rows are remaining work on the live product named in the row.</li>",
+        "<li>BAN/SKIP means the clone stays frozen. Do not paste analog reconstructions, AGPL, GPL, or leaked trees.</li>",
+        "<li>Claim on GitHub. POST /v1/run stays 405. Cortex runs.</li>",
+        "</ol>",
+        f'<p class="absent">{_esc(d.get("rule") or "")}</p>',
+    ]
+    present = d.get("analog_present")
+    absent = d.get("analog_absent")
+    bits.append(
+        f"<p>Analog trees present <code>{_esc(present)}</code>. "
+        f"Absent <code>{_esc(absent)}</code>. "
+        f"Open <code>{_esc(d.get('open'))}</code>"
+        + (" none." if d.get("none") else ".")
+        + " Laptop fetch analog leftover is GET /v1/fetch analog_next. "
+        "Control does not seat. Ontology stays Cortex. P1 parked."
+        "</p>"
+    )
+    beat = [r for r in (d.get("heartbeat") or []) if isinstance(r, dict)]
+    if beat:
+        bits.append(
+            "<p>Heartbeat labels (no extra probe). Control does not start peers.</p>"
+        )
+        rows = [
+            "<table><tr><th>product</th><th>href</th><th>role</th></tr>"
+        ]
+        for row in beat[:8]:
+            rows.append(
+                "<tr><td>"
+                f"{_esc(row.get('product'))}</td>"
+                f"<td><code>{_esc(row.get('href'))}</code></td>"
+                f"<td>{_esc(row.get('role'))}</td></tr>"
+            )
+        rows.append("</table>")
+        bits.append("".join(rows))
+    if d.get("parking_unread"):
+        bits.append(
+            '<p class="absent">Parking unread: '
+            + _esc("; ".join(str(x) for x in d["parking_unread"]))
+            + "</p>"
+        )
+    if analog:
+        rows = [
+            "<table><tr><th>lane</th><th>name</th><th>surface</th><th>home</th><th>verdict</th></tr>"
+        ]
+        for row in analog:
+            tree = str(row.get("tree") or "unread")
+            cls = "absent" if tree == "absent" else ""
+            label = row.get("name") or row.get("product")
+            rows.append(
+                f'<tr class="{cls}"><td>{_esc(row.get("lane"))}</td>'
+                f"<td>{_esc(label)}</td><td>{_esc(row.get('surface'))}</td>"
+                f"<td><code>{_esc(row.get('home'))}</code></td>"
+                f"<td>{_esc(row.get('verdict'))}</td></tr>"
+            )
+        rows.append("</table>")
+        bits.append("".join(rows))
+    if not items:
+        bits.append('<p class="absent">Incomplete plans none.</p>')
+        return "".join(bits)
+    work = []
+    for row in items[:40]:
+        if row.get("kind") == "parking":
+            label = f"{row.get('id')} {row.get('title')}"
+            tag = row.get("state") or "parked"
+        else:
+            label = (
+                f"{row.get('name') or row.get('product')} "
+                f"({row.get('surface')}) -> {row.get('home') or row.get('path')}"
+            )
+            tag = row.get("verdict") or row.get("tree") or "open"
+        work.append(
+            f'<div class="work-row"><code>{_esc(row.get("lane") or row.get("id"))}</code>'
+            f'<span class="work-row__title">{_esc(label)}</span>'
+            f'<span class="tags"><span class="tag">{_esc(tag)}</span></span></div>'
+        )
+    bits.append(f'<div class="work-list">{"".join(work)}</div>')
+    return "".join(bits)
+
+
+def _prompts_body(d: Any) -> str:
+    d = d or {}
+    items = [r for r in (d.get("items") or []) if isinstance(r, dict)]
+    pastes = [r for r in (d.get("pastes") or []) if isinstance(r, dict)]
+    bits: list[str] = [
+        "<p>Prompt surfaces and Crew paste briefs. Control lists them. It does not spawn or edit a charter.</p>",
+        '<ol class="steps">',
+        "<li>Paste grok-master, then prd-agent. Then at most two writer pastes (WIP cap 2).</li>",
+        "<li>Reuse analog segments in the live product. Do not redesign UI tokens or layout DNA. ALREADY rows are live Crew/Cortex files.</li>",
+        "<li>DISTILL is ideas only. Do not paste Anthropic prompt strings. BAN trees stay frozen. POST /v1/run stays 405.</li>",
+        "</ol>",
+        f'<p class="absent">{_esc(d.get("rule") or "")}</p>',
+    ]
+    if pastes:
+        work = []
+        for row in pastes:
+            work.append(
+                f'<div class="work-row"><code>{_esc(row.get("id"))}</code>'
+                f'<span class="work-row__title">{_esc(row.get("product"))} ({_esc(row.get("wip"))})</span>'
+                f'<span class="tags"><span class="tag">paste</span></span></div>'
+                f"<pre>{_esc((row.get('paste') or '')[:1200])}</pre>"
+            )
+        bits.append(f'<div class="work-list">{"".join(work)}</div>')
+    if not items:
+        bits.append('<p class="absent">Prompt surfaces none.</p>')
+        return "".join(bits)
+    work = []
+    for row in items:
+        files = row.get("files") or []
+        extra = f" files {', '.join(str(x) for x in files[:8])}" if files else ""
+        label = f"{row.get('path')} -> {row.get('product')}{extra}"
+        work.append(
+            f'<div class="work-row"><code>{_esc(row.get("id"))}</code>'
+            f'<span class="work-row__title">{_esc(label)}</span>'
+            f'<span class="tags"><span class="tag">{_esc(row.get("verdict"))}</span>'
+            f'<span class="tag">{_esc(row.get("tree"))}</span></span></div>'
+        )
+    bits.append(f'<div class="work-list">{"".join(work)}</div>')
+    return "".join(bits)
+
+
 def _cortex_body(d: Any) -> str:
     d = d or {}
     bits: list[str] = []
@@ -226,6 +355,42 @@ def _cortex_body(d: Any) -> str:
         ver = features.get("engine_version") if isinstance(features, dict) else None
         if ver:
             bits.append(f"<p>engine <code>{_esc(ver)}</code></p>")
+        extras = features.get("extras") if isinstance(features, dict) else None
+        if isinstance(extras, dict) and extras.get("agentic") is True:
+            bits.append("<p>features.extras.agentic=true (Cortex actions. Ontology stays Cortex).</p>")
+    insights = d.get("insights") if isinstance(d.get("insights"), dict) else None
+    if insights:
+        bits.append(
+            "<p>Constructor ontology (display): "
+            f"view={_esc(insights.get('constructor_view'))} "
+            f"pack={_esc(insights.get('pack'))} "
+            f"p1={_esc(insights.get('p1'))}. "
+            "Control holds no viewer key. POST /v1/run stays 405.</p>"
+        )
+        if insights.get("constructor_view") == "gated":
+            bits.append(
+                f'<p class="absent">{_esc(insights.get("constructor_detail") or "Control holds no viewer key")}. '
+                "Ask Cortex with a viewer key. Ontology stays Cortex. P1 parked.</p>"
+            )
+        lite = insights.get("constructor_seeds") if isinstance(insights.get("constructor_seeds"), dict) else None
+        if not lite:
+            lite = insights.get("palantir_lite") if isinstance(insights.get("palantir_lite"), dict) else None
+        if not lite:
+            lite = constructor_seeds()
+        bits.append(
+            "<p>Constructor seeds (generate, p1="
+            f"{_esc(lite.get('p1'))}): define data, govern agents, "
+            "business insights. DMS Ontology opens Constructor canvas. "
+            "Control does not POST generate.</p>"
+        )
+        onto = insights.get("ontology") if isinstance(insights.get("ontology"), dict) else None
+        if onto:
+            bits.append(
+                "<p>ontology counts "
+                f"objects={_esc(onto.get('object_count'))} "
+                f"actions={_esc(onto.get('action_count'))} "
+                f"fetch_places={_esc(onto.get('fetch_place_count'))}</p>"
+            )
     activity = d.get("activity")
     if activity is None:
         bits.append(
@@ -297,11 +462,13 @@ def _cortex_body(d: Any) -> str:
             f'<p class="absent">Refusal/manifest view: '
             f'{_esc(d.get("refusal_why") or "absent")}</p>'
         )
+    live = _esc(d.get("constructor_live") or constructor_live_url())
     bits.append(
         "<p>Constructor flow (this shell launches the skin, Cortex is the engine): "
         '<a href="/constructor/">/constructor/</a> sketch · '
-        '<a href="http://127.0.0.1:8010/cortex/constructor/">'
-        "http://127.0.0.1:8010/cortex/constructor/</a> live.</p>"
+        f'<a href="{live}">{live}</a> live. '
+        "Constructor seeds on the sketch: Define data, Govern agents, Insights. "
+        "P1 stays parked. Control does not POST generate.</p>"
     )
     return "".join(bits)
 
@@ -354,6 +521,75 @@ def _openvault_body(d: Any) -> str:
             f"{_esc(d.get('usage_detail') or 'usage unread')}. "
             "Control does not invent spend.</p>"
         )
+    register = d.get("register") if isinstance(d.get("register"), dict) else None
+    if register:
+        bits.append(
+            "<p>Free register help (display). Control did not mint a key. "
+            f"priced={_esc(register.get('priced'))}. "
+            "Open register_url then POST /api/keys on OpenVault :5000. "
+            "Do not start :3010 from Control.</p>"
+        )
+        if register.get("help"):
+            bits.append(f'<p class="absent">{_esc(register.get("help"))}</p>')
+        for step in register.get("next_steps") or []:
+            if not isinstance(step, dict):
+                continue
+            bits.append(f"<p><code>{_esc(step.get('do'))}</code></p>")
+        ladder = register.get("ladder") if isinstance(register.get("ladder"), list) else []
+        if ladder:
+            shown = " ".join(
+                f"{_esc(row.get('kind'))}:{_esc(row.get('id'))}"
+                for row in ladder[:8]
+                if isinstance(row, dict)
+            )
+            bits.append(
+                f"<p>Free ladder (display, local first): {shown}. "
+                "Control did not pick a route. Do not invent prices.</p>"
+            )
+        # priced stays false; ladder ids only
+    else:
+        bits.append(
+            f'<p class="absent">OpenVault register help unread. '
+            f"{_esc(d.get('register_detail') or 'unread')}. "
+            "Control does not auto-register.</p>"
+        )
+    ship = d.get("ship") if isinstance(d.get("ship"), dict) else None
+    if ship:
+        bits.append(
+            "<p>OpenShip (display). Control did not publish. "
+            f"openship={_esc(ship.get('openship_effective') or ship.get('mode'))} "
+            f"gate={_esc(ship.get('human_test_gate'))} "
+            f"live_url_observed={_esc(ship.get('live_url_observed'))} "
+            f"targets={_esc(ship.get('target_count'))} "
+            f"tabs={_esc(' '.join(str(t) for t in (ship.get('tabs') or [])[:8]))}. "
+            f"{_esc(ship.get('rule') or 'Control does not publish.')}</p>"
+        )
+    else:
+        bits.append(
+            f'<p class="absent">OpenVault ship unread. '
+            f"{_esc(d.get('ship_detail') or 'unread')}. "
+            "Publish stays OpenVault :5000. Do not start :3010 from Control.</p>"
+        )
+    play = d.get("playground") if isinstance(d.get("playground"), dict) else None
+    if play:
+        href = play.get("href") or "http://127.0.0.1:3010/"
+        vault = play.get("vault") or "http://127.0.0.1:3010/vault"
+        playground = play.get("playground") or "http://127.0.0.1:3010/playground"
+        if play.get("up"):
+            bits.append(
+                f'<p style="color:var(--ok)">OpenVault app ok. '
+                f'<a href="{_esc(href)}">{_esc(href)}</a> '
+                f'<a href="{_esc(vault)}">/vault</a> '
+                f'<a href="{_esc(playground)}">/playground</a>. '
+                "Control did not start :3010.</p>"
+            )
+        else:
+            bits.append(
+                f'<p class="absent">OpenVault app unread. '
+                f"{_esc(play.get('detail') or 'unread')}. "
+                "npm run dev in D:\\OpenVault\\apps\\web. "
+                "Control does not start :3010.</p>"
+            )
     return "".join(bits)
 
 
@@ -433,6 +669,127 @@ def _crew_health_body(d: Any) -> str:
             f'<p class="absent">Crew engine ping: {_esc(why)}. '
             "Control does not start Cortex.</p>"
         )
+    return "".join(bits)
+
+
+def _crew_sidecar_body(d: Any) -> str:
+    d = d or {}
+    converse = _esc(d.get("converse") or "http://127.0.0.1:8023")
+    fork = _esc(d.get("fork") or "http://127.0.0.1:8020")
+    bits: list[str] = [
+        "<p>Engine Crew sidecar. Hung converse stays "
+        f'<a href="{fork}">{fork}</a>. Agents must not kill it (R-0015).</p>',
+        f'<p>Talk here: <a href="{converse}">{converse}</a></p>',
+        f'<p class="absent">{_esc(d.get("rule") or "")}</p>',
+    ]
+    cc = d.get("computer_control")
+    if cc:
+        bits.append(
+            '<p style="color:var(--ok)">Sidecar computer_control flag is on. '
+            "UACC is the OS mouse. Control does not click.</p>"
+        )
+    else:
+        bits.append(
+            '<p class="absent">Sidecar computer_control flag unread or off. '
+            "Control will not set CORTEX_COMPUTER_CONTROL.</p>"
+        )
+    if d.get("grok_offloaded"):
+        bits.append("<p>Crew owns converse. Reconstruction exe stays off (R-0015).</p>")
+    if d.get("engine_ok"):
+        bits.append(
+            '<p style="color:var(--ok)">Sidecar engine ping ok '
+            f"(<code>{_esc(d.get('engine_url') or 'ok')}</code>).</p>"
+        )
+    else:
+        bits.append(
+            f'<p class="absent">Sidecar engine ping: {_esc(d.get("engine_detail") or "unread")}.</p>'
+        )
+    wakes_view = d.get("wakes_view")
+    if wakes_view == "none":
+        bits.append(
+            '<p class="absent">Wakes none. Sidecar tick is running. Control does not POST wakes.</p>'
+        )
+    elif wakes_view == "present":
+        bits.append(
+            f"<p>Wakes present n={_esc(d.get('wakes_n'))}. Crew owns the tick. "
+            "Control does not POST wakes.</p>"
+        )
+    else:
+        bits.append(
+            f'<p class="absent">Wakes unread. {_esc(d.get("wakes_detail") or "GET /crew/wakes")}. '
+            "Control does not POST wakes.</p>"
+        )
+    tick = d.get("wake_tick_at")
+    if tick:
+        bits.append(
+            f'<p class="absent">Wake loop last tick {_esc(tick)}. '
+            "Empty wakes is none, not unread.</p>"
+        )
+    return "".join(bits)
+
+
+def _openide_body(d: Any) -> str:
+    d = d or {}
+    bits: list[str] = [
+        "<p>AirGPT OpenIDE. Control lists liveness. It does not run the IDE or mint keys.</p>"
+    ]
+    href = d.get("href") or "http://127.0.0.1:8765/OpenIDE/ui/"
+    if d.get("up"):
+        bits.append(
+            f'<p style="color:var(--ok)">OpenIDE host ok '
+            f"(<code>{_esc(d.get('service') or 'airgpt')}</code>). "
+            f'<a href="{_esc(href)}">{_esc(href)}</a></p>'
+        )
+    else:
+        bits.append(
+            '<p class="absent">OpenIDE unread. GET /v1/openide. '
+            "Start D:\\AirGPT clipdrop.py with AIRGPT_NO_BROWSER=1. "
+            "Do not start OpenFree :20128.</p>"
+        )
+    ready = d.get("ready") if isinstance(d.get("ready"), dict) else None
+    if ready:
+        missing = ready.get("missing") or []
+        bits.append(
+            f"<p>ready ok={_esc(ready.get('ok'))} backend={_esc(ready.get('backend'))}"
+            f" usable={_esc(ready.get('usable_count'))}"
+            f"{' missing ' + _esc(', '.join(str(x) for x in missing[:8])) if missing else ''}</p>"
+        )
+    elif d.get("ready_detail"):
+        bits.append(f'<p class="absent">OpenIDE ready: {_esc(d.get("ready_detail"))}</p>')
+    if d.get("rule"):
+        bits.append(f'<p class="absent">{_esc(d.get("rule"))}</p>')
+    leftover = d.get("leftover") or "OpenIDE leftover TUI. SKIP second IDE."
+    bits.append(
+        f'<p class="absent">Leftover: {_esc(leftover)} POST /v1/run stays 405.</p>'
+    )
+    return "".join(bits)
+
+
+def _pointer_body(d: Any) -> str:
+    d = d or {}
+    bits: list[str] = [
+        "<p>Pointer HUD + Cortex POST /dms/secure. UACC is the only OS mouse. "
+        "Control does not start Pointer (R-0015).</p>"
+    ]
+    if d.get("confirm_gated"):
+        bits.append(
+            '<p style="color:var(--ok)">plan-guard launches set _requireConfirm. '
+            f"nod_confirm={_esc(d.get('nod_confirm'))}.</p>"
+        )
+    else:
+        bits.append(
+            f'<p class="absent">Pointer confirm gate unread. GET /v1/pointer. '
+            f"{_esc(d.get('detail') or 'unread')}</p>"
+        )
+    if d.get("up"):
+        bits.append('<p style="color:var(--ok)">Pointer.exe present on this PC.</p>')
+    else:
+        bits.append(
+            '<p class="absent">Pointer not running. Founder starts D:\\Pointer. '
+            "Control will not.</p>"
+        )
+    if d.get("rule"):
+        bits.append(f'<p class="absent">{_esc(d.get("rule"))}</p>')
     return "".join(bits)
 
 
@@ -927,6 +1284,10 @@ def _strip(state: dict[str, Any]) -> str:
     pads = state.get("claude_pads") or {}
     surfaces = state.get("surfaces") or {}
     pick_n = _stat(pickup, "count")
+    plans = state.get("plans") or {}
+    plan_n = _stat(plans, "open")
+    prompts = state.get("prompts") or {}
+    prompt_n = _stat(prompts, "open")
     seated = _stat(fleet, "seated")
     held = _stat(fleet, "held")
     pad_ok = bool(pads.get("ok"))
@@ -947,6 +1308,8 @@ def _strip(state: dict[str, Any]) -> str:
     return (
         '<div class="strip" id="strip">'
         + _strip_cell("#pickup", bool(pickup.get("ok")), pick_n, "pickup", cell_id="stripPickup")
+        + _strip_cell("#plans", bool(plans.get("ok")), plan_n, "plans", cell_id="stripPlans")
+        + _strip_cell("#prompts", bool(prompts.get("ok")), prompt_n, "prompts", cell_id="stripPrompts")
         + _strip_cell("#fleet", bool(fleet.get("ok")), seated, "seated")
         + _strip_cell("#fleet", bool(fleet.get("ok")), held, "held")
         + _strip_cell("#pads", pad_ok, pad_n, "claude pads", cell_id="stripPads")
@@ -1022,7 +1385,7 @@ def _howto(contract: dict[str, Any]) -> str:
         "<strong>Every agent</strong>"
         '<a class="btn" href="/v1/contract">GET /v1/contract</a>'
         "<code>/v1/pickup</code> <code>/v1/fleet</code> <code>/v1/you</code> "
-        "<code>/v1/coordinate</code>"
+        "<code>/v1/coordinate</code> <code>/v1/plans</code> <code>/v1/prompts</code> <code>/v1/fetch</code> <code>/v1/openide</code> <code>/v1/pointer</code> <code>/v1/insights</code>"
         "<span>then claim on GitHub. YOU step 8 binds :8020. "
         f"talk_probe={_esc(talk)} you_steps={_esc(steps)} usage_probe={_esc(usage)} "
         f"board_wait_s={_esc(board_wait)} pickup_board_wait_s={_esc(pickup_wait)} "
@@ -1080,6 +1443,9 @@ def render_page(state: dict[str, Any]) -> str:
 {_rail_agents(state)}
 <nav>
 <a href="#pickup">Pickup</a>
+<a href="#fetch">Fetch</a>
+<a href="#plans">Plans</a>
+<a href="#prompts">Prompts</a>
 <a href="#coordinate">Coordinate</a>
 <a href="#you">YOU</a>
 <a href="#board">Board</a>
@@ -1093,6 +1459,7 @@ def render_page(state: dict[str, Any]) -> str:
 <a href="#runtime">Watchdog</a>
 <a href="/constructor/">Constructor</a>
 <a href="#vault">OpenVault</a>
+<a href="#pointer">Pointer</a>
 <a href="#ship">Spaceship</a>
 <a href="#crew">Crew belt</a>
 <a href="#tools">Laptop tools</a>
@@ -1100,7 +1467,7 @@ def render_page(state: dict[str, Any]) -> str:
 <a href="#gate">Gate</a>
 </nav>
 <p class="absent" style="color:var(--rail-muted)">Display and launch only.
-No Paperclip brand. No Plane source. No third orchestrator.</p>
+No third orchestrator. POST /v1/run stays 405.</p>
 </aside>
 <main class="stage">
 <div class="pane__head">
@@ -1129,6 +1496,11 @@ No Paperclip brand. No Plane source. No third orchestrator.</p>
 </div>
 <div class="workbench" id="desk">
 {_panel("Pickup", pick, _pickup_body, "", "pickup", _reading_n(pick, "items"))}
+<div class="panel" id="fetch"><h2>Laptop fetch <span class="count"></span></h2>
+<div id="fetchBody"><p class="absent">Laptop fetch unread. GET /v1/fetch.</p></div>
+</div>
+{_panel("Incomplete plans", state.get("plans") or {{}}, _plans_body, "", "plans", _reading_n(state.get("plans") or {{}}, "items"))}
+{_panel("Prompt surfaces", state.get("prompts") or {{}}, _prompts_body, "", "prompts", _reading_n(state.get("prompts") or {{}}, "items"))}
 {_panel("Board", board, _board_body, "", "board", _reading_n(board, "items"))}
 {_panel("Who is seated", fleet, _fleet_body, "", "fleet", _reading_n(fleet, "rows"))}
 </div>
@@ -1139,7 +1511,10 @@ No Paperclip brand. No Plane source. No third orchestrator.</p>
 {_panel("Spaceship host (reuse, do not buy)", state.get("spaceship") or {{}}, _spaceship_body, "", "ship")}
 {_panel("Crew conveyor (display-only)", state.get("crew") or {{}}, _crew_belt_body, "", "crew")}
 {_panel("Laptop tools (Crew health)", state.get("crew_health") or {{}}, _crew_health_body, "", "tools")}
+{_panel("Crew sidecar :8023", state.get("crew_sidecar") or {{}}, _crew_sidecar_body, "", "sidecar")}
 {_panel("Skill chest (Netie-KB)", state.get("kb") or {{}}, _kb_body, "", "kb")}
+{_panel("OpenIDE (AirGPT :8765)", state.get("openide") or {{}}, _openide_body, "", "openide")}
+{_panel("Pointer (confirm-gated HUD)", state.get("pointer") or {{}}, _pointer_body, "", "pointer")}
 {_gate_panel(gate)}
 </div>
 </details>
@@ -1150,7 +1525,13 @@ Crew surface (converse lives there, not here):
 <a href="http://127.0.0.1:8020">http://127.0.0.1:8020</a>
  - public name work.netie.ai is HUMAN_STOP.
 Control <code>GET /v1/belt</code> is a display proxy of Crew JSON.
-Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> is unseated work. Control does not assign.
+Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> is unseated work.
+<code>GET /v1/fetch</code> is the same tray (laptop task fetch). Ticket Runner seats. POST /v1/run stays 405.
+<code>GET /v1/plans</code> is analog remaining plus parked lots. Control does not assign.
+<code>GET /v1/prompts</code> is Crew/Cortex prompt surfaces. Control does not edit prompts.
+<code>GET /v1/openide</code> is AirGPT OpenIDE liveness. Control does not run the IDE.
+<code>GET /v1/pointer</code> is Pointer confirm-gate. Control does not start Electron.
+<code>GET /v1/insights</code> is Cortex pack/constructor detection. Constructor <code>/constructor/</code> seeds: Define data, Govern agents, Insights. Ontology stays Cortex. P1 parked.
 Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.</footer>
 </main>
 <aside class="inspector">
@@ -1189,7 +1570,7 @@ the founder's desktop software (R-0015).</p></div>
 </div>
 <script>
 (function () {{
-  const ids = ["pickup","coordinate","you","board","fleet","runtime","cortex","vault","ship","crew","tools","kb","gate"];
+  const ids = ["pickup","plans","prompts","coordinate","you","board","fleet","runtime","cortex","vault","ship","crew","tools","kb","gate"];
   function show(id, scroll) {{
     const target = ids.includes(id) ? id : "pickup";
     document.querySelectorAll(".stage .panel").forEach(function (p) {{
@@ -1335,6 +1716,14 @@ the founder's desktop software (R-0015).</p></div>
       var strip = document.getElementById("stripPickup");
       if (strip) strip.textContent = String(n);
     }}
+    if (panelId === "plans") {{
+      var stripP = document.getElementById("stripPlans");
+      if (stripP) stripP.textContent = String(n);
+    }}
+    if (panelId === "prompts") {{
+      var stripPr = document.getElementById("stripPrompts");
+      if (stripPr) stripPr.textContent = String(n);
+    }}
   }}
   function readingJson(r) {{
     if (!r.ok) throw new Error("unread " + r.status);
@@ -1474,6 +1863,201 @@ the founder's desktop software (R-0015).</p></div>
   }}).catch(function () {{
     var body = document.getElementById("pickupBody");
     if (body) body.innerHTML = '<p class="absent">Pickup unread. GET /v1/pickup.</p>';
+  }});
+  function fetchHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var head = "<p>Laptop task fetch. Ticket Runner seats. Control does not run. POST /v1/run stays 405.</p>";
+    if (d.next && d.next.ticket) {{
+      head += "<p>GitHub next <code>" + esc(d.next.ticket) + "</code> "
+        + esc(d.next.title || "") + ". Unseated. Do not write.</p>";
+    }}
+    var analog = d.analog_next || null;
+    if (analog) {{
+      head += "<p>Analog leftover <code>" + esc(analog.name || analog.product)
+        + "</code> " + esc(analog.surface || "") + " -&gt; <code>"
+        + esc(analog.home || analog.path) + "</code>. Clone frozen.</p>";
+    }}
+    head += "<p>P1 parked. Ontology stays Cortex. Do not start OpenIDE or Pointer.</p>";
+    var work = d.working || [];
+    var table = "";
+    if (work.length) {{
+      table = "<table><tr><th>product</th><th>state</th><th>role</th><th>detail</th></tr>"
+        + work.map(function (r) {{
+          var cls = r.state === "unread" || !r.up ? "absent" : "";
+          return '<tr class="' + cls + '"><td>' + esc(r.product)
+            + "</td><td>" + esc(r.state) + "</td><td>" + esc(r.role)
+            + "</td><td>" + esc(r.detail || "") + "</td></tr>";
+        }}).join("")
+        + "</table>";
+    }}
+    return head + table;
+  }}
+  fetch("/v1/fetch").then(readingJson).then(function (b) {{
+    var body = document.getElementById("fetchBody");
+    if (!body) return;
+    body.innerHTML = fetchHtml(b);
+    var n = (b.ok && b.data && b.data.working) ? b.data.working.length : "unread";
+    setCount("fetch", n);
+  }}).catch(function () {{
+    var body = document.getElementById("fetchBody");
+    if (body) body.innerHTML = '<p class="absent">Laptop fetch unread. GET /v1/fetch.</p>';
+  }});
+  function plansHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var analog = d.analog || [];
+    var items = d.items || [];
+    var head = "<p>Incomplete plans - analog lifts and parked lots. Control does not unpark or copy.</p>"
+      + '<ol class="steps">'
+      + "<li>DISTILL/PARK rows are remaining work on the live product named in the row.</li>"
+      + "<li>BAN/SKIP means the clone stays frozen.</li>"
+      + "<li>Claim on GitHub. POST /v1/run stays 405.</li></ol>";
+    if (d.rule) head += '<p class="absent">' + esc(d.rule) + "</p>";
+    head += "<p>Analog trees present <code>" + esc(d.analog_present)
+      + "</code>. Absent <code>" + esc(d.analog_absent)
+      + "</code>. Open <code>" + esc(d.open) + "</code>"
+      + (d.none ? " none." : ".")
+      + " Laptop fetch analog leftover is GET /v1/fetch analog_next. Control does not seat. Ontology stays Cortex. P1 parked.</p>";
+    var beat = d.heartbeat || [];
+    if (beat.length) {{
+      head += "<p>Heartbeat labels (no extra probe). Control does not start peers.</p>"
+        + "<table><tr><th>product</th><th>href</th><th>role</th></tr>"
+        + beat.slice(0, 8).map(function (r) {{
+          return "<tr><td>" + esc(r.product) + "</td><td><code>" + esc(r.href)
+            + "</code></td><td>" + esc(r.role) + "</td></tr>";
+        }}).join("")
+        + "</table>";
+    }}
+    var table = "";
+    if (analog.length) {{
+      table = "<table><tr><th>lane</th><th>name</th><th>surface</th><th>home</th><th>verdict</th></tr>"
+        + analog.map(function (r) {{
+          return "<tr><td>" + esc(r.lane) + "</td><td>" + esc(r.name || r.product)
+            + "</td><td>" + esc(r.surface) + "</td><td><code>" + esc(r.home)
+            + "</code></td><td>" + esc(r.verdict) + "</td></tr>";
+        }}).join("")
+        + "</table>";
+    }}
+    var list = "";
+    if (!items.length) {{
+      list = '<p class="absent">Incomplete plans none.</p>';
+    }} else {{
+      list = '<div class="work-list">' + items.slice(0, 40).map(function (r) {{
+        var label = r.kind === "parking"
+          ? (r.id + " " + (r.title || ""))
+          : ((r.name || r.product || "") + " (" + (r.surface || "") + ") -> "
+            + (r.home || r.path || ""));
+        var tag = r.state || r.verdict || r.tree || "open";
+        return '<div class="work-row"><code>' + esc(r.lane || r.id)
+          + '</code><span class="work-row__title">' + esc(label)
+          + '</span><span class="tags"><span class="tag">' + esc(tag)
+          + "</span></span></div>";
+      }}).join("") + "</div>";
+    }}
+    return head + table + list;
+  }}
+  fetch("/v1/plans").then(readingJson).then(function (b) {{
+    var body = document.getElementById("plansBody");
+    if (!body) return;
+    body.innerHTML = plansHtml(b);
+    var n = (b.ok && b.data && typeof b.data.open === "number") ? b.data.open
+      : ((b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
+    setCount("plans", n);
+  }}).catch(function () {{
+    var body = document.getElementById("plansBody");
+    if (body) body.innerHTML = '<p class="absent">Plans unread. GET /v1/plans.</p>';
+  }});
+  function promptsHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var items = d.items || [];
+    var head = "<p>Prompt surfaces and Crew paste briefs. Control lists them. It does not spawn.</p>"
+      + "<p>Paste grok-master, then prd-agent. Reuse analog segments. Do not redesign UI tokens or layout DNA. WIP two writers.</p>";
+    if (d.rule) head += '<p class="absent">' + esc(d.rule) + "</p>";
+    var pastes = d.pastes || [];
+    var pasteList = "";
+    if (pastes.length) {{
+      pasteList = '<div class="work-list">' + pastes.map(function (r) {{
+        var body = String(r.paste || "").slice(0, 1200);
+        return '<div class="work-row"><code>' + esc(r.id)
+          + '</code><span class="work-row__title">' + esc((r.product || "") + " (" + (r.wip || "") + ")")
+          + '</span><span class="tags"><span class="tag">paste</span></span></div>'
+          + "<pre>" + esc(body) + "</pre>";
+      }}).join("") + "</div>";
+    }}
+    if (!items.length && !pastes.length) {{
+      return head + '<p class="absent">Prompts unread. GET /v1/prompts.</p>';
+    }}
+    var list = '<div class="work-list">' + items.map(function (r) {{
+      return '<div class="work-row"><code>' + esc(r.id)
+        + '</code><span class="work-row__title">' + esc((r.path || "") + " -> " + (r.product || ""))
+        + '</span><span class="tags"><span class="tag">' + esc(r.verdict || "")
+        + "</span></span></div>";
+    }}).join("") + "</div>";
+    return head + pasteList + list;
+  }}
+  fetch("/v1/prompts").then(readingJson).then(function (b) {{
+    var body = document.getElementById("promptsBody");
+    if (!body) return;
+    body.innerHTML = promptsHtml(b);
+    var n = (b.ok && b.data && typeof b.data.open === "number") ? b.data.open
+      : ((b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
+    setCount("prompts", n);
+  }}).catch(function () {{
+    var body = document.getElementById("promptsBody");
+    if (body) body.innerHTML = '<p class="absent">Prompts unread. GET /v1/prompts.</p>';
+  }});
+  function openideHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var head = "<p>AirGPT OpenIDE. Control lists liveness. It does not run the IDE.</p>";
+    if (d.up) {{
+      head += '<p style="color:var(--ok)">OpenIDE host ok (<code>' + esc(d.service || "airgpt")
+        + '</code>). <a href="' + esc(d.href || "http://127.0.0.1:8765/OpenIDE/ui/") + '">'
+        + esc(d.href || "http://127.0.0.1:8765/OpenIDE/ui/") + "</a></p>";
+    }} else {{
+      head += '<p class="absent">OpenIDE unread. GET /v1/openide.</p>';
+    }}
+    if (d.rule) head += '<p class="absent">' + esc(d.rule) + "</p>";
+    return head;
+  }}
+  fetch("/v1/openide").then(readingJson).then(function (b) {{
+    var body = document.getElementById("openideBody");
+    if (!body) return;
+    body.innerHTML = openideHtml(b);
+    setCount("openide", (b.ok && b.data && b.data.up) ? "up" : "unread");
+  }}).catch(function () {{
+    var body = document.getElementById("openideBody");
+    if (body) body.innerHTML = '<p class="absent">OpenIDE unread. GET /v1/openide.</p>';
+  }});
+  function pointerHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var head = "<p>Pointer HUD + Cortex POST /dms/secure. UACC is the only OS mouse. "
+      + "Control does not start Pointer (R-0015).</p>";
+    if (d.confirm_gated) {{
+      head += '<p style="color:var(--ok)">plan-guard launches set _requireConfirm. nod_confirm='
+        + esc(d.nod_confirm) + ".</p>";
+    }} else {{
+      head += '<p class="absent">Pointer confirm gate unread. GET /v1/pointer.</p>';
+    }}
+    if (d.up) {{
+      head += '<p style="color:var(--ok)">Pointer.exe present on this PC.</p>';
+    }} else {{
+      head += '<p class="absent">Pointer not running. Founder starts D:\\\\Pointer. Control will not.</p>';
+    }}
+    if (d.rule) head += '<p class="absent">' + esc(d.rule) + "</p>";
+    return head;
+  }}
+  fetch("/v1/pointer").then(readingJson).then(function (b) {{
+    var body = document.getElementById("pointerBody");
+    if (!body) return;
+    body.innerHTML = pointerHtml(b);
+    setCount("pointer", (b.ok && b.data && b.data.confirm_gated) ? "gated" : "unread");
+  }}).catch(function () {{
+    var body = document.getElementById("pointerBody");
+    if (body) body.innerHTML = '<p class="absent">Pointer unread. GET /v1/pointer.</p>';
   }});
   function padsHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);

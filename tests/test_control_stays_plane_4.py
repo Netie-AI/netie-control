@@ -45,6 +45,9 @@ from netie_control.sources import (
     crew_talk_view as _REAL_CREW_TALK,
 )
 from netie_control.sources import (
+    openide_view as _REAL_OPENIDE,
+)
+from netie_control.sources import (
     desktop_surfaces_view as _REAL_DESKTOP_SURFACES,
 )
 from netie_control.sources import (
@@ -58,6 +61,12 @@ from netie_control.sources import (
 )
 from netie_control.sources import (
     openvault_view as _REAL_OPENVAULT,
+)
+from netie_control.sources import (
+    pointer_view as _REAL_POINTER,
+)
+from netie_control.sources import (
+    crew_sidecar_view as _REAL_SIDECAR,
 )
 
 
@@ -102,6 +111,13 @@ def _quiet_peer_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         sources,
+        "crew_sidecar_view",
+        lambda timeout=CREW_BELT_WAIT_S: Reading.unreachable(
+            "http://127.0.0.1:8023/crew/health", "test: no live Crew sidecar"
+        ),
+    )
+    monkeypatch.setattr(
+        sources,
         "crew_talk_view",
         lambda: Reading.unreachable("http://127.0.0.1:8020/", "test: no live Crew talk"),
     )
@@ -109,6 +125,18 @@ def _quiet_peer_probes(monkeypatch: pytest.MonkeyPatch) -> None:
         sources,
         "kb_view",
         lambda: Reading.unreachable("http://127.0.0.1:8030/healthz", "test: no live KB"),
+    )
+    monkeypatch.setattr(
+        sources,
+        "openide_view",
+        lambda: Reading.unreachable(
+            "http://127.0.0.1:8765/api/health", "test: no live OpenIDE"
+        ),
+    )
+    monkeypatch.setattr(
+        sources,
+        "pointer_view",
+        lambda: Reading.unreachable("D:\\Pointer", "test: no live Pointer"),
     )
     monkeypatch.setattr(
         sources,
@@ -162,6 +190,18 @@ def _quiet_peer_probes(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(scope="module")
 def client() -> TestClient:
     return TestClient(create_app())
+
+
+def _mute_ov_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "loopback_get_status",
+        lambda url, timeout=2.0, read=512: Reading.unreachable(
+            url, "test: no live OV app"
+        ),
+    )
 
 
 @pytest.mark.parametrize("path", sorted(FORBIDDEN))
@@ -544,6 +584,28 @@ def test_openvault_usage_counts_are_display_not_a_price(
                     },
                 },
                 "usage_detail": "",
+                "playground": {
+                    "up": True,
+                    "href": "http://127.0.0.1:3010/",
+                    "vault": "http://127.0.0.1:3010/vault",
+                    "playground": "http://127.0.0.1:3010/playground",
+                    "detail": "",
+                    "rule": "Control does not start :3010.",
+                },
+                "register": {
+                    "priced": False,
+                    "ladder": [{"id": "ollama", "kind": "local"}],
+                },
+                "ship": {
+                    "connected": None,
+                    "mode": "simulate",
+                    "openship_effective": "simulate",
+                    "human_test_gate": "HT1",
+                    "live_url_observed": False,
+                    "target_count": 4,
+                    "tabs": ["folder", "github", "url", "upload"],
+                    "rule": "Control does not publish. POST /v1/run stays 405. Do not start :3010. HT1 stays human.",
+                },
             },
         ),
     )
@@ -553,6 +615,13 @@ def test_openvault_usage_counts_are_display_not_a_price(
     assert "estimated_tokens=2" in page
     assert "total_tokens=10" in page
     assert "Do not invent prices" in page
+    assert "http://127.0.0.1:3010/playground" in page
+    assert "Control did not start :3010" in page
+    assert "Free ladder (display, local first): local:ollama" in page
+    assert "openship=simulate" in page
+    assert "gate=HT1" in page
+    assert "tabs=folder github url upload" in page
+    assert "Control does not publish" in page
     assert client.post("/v1/route").status_code == 405
 
 
@@ -586,9 +655,49 @@ def test_openvault_view_slims_usage_and_drops_ledger_rows(
                 },
                 source=url,
             )
+        if url.endswith("/api/providers/free"):
+            return Reading(
+                ok=True,
+                data={
+                    "priced": False,
+                    "count": 2,
+                    "help": "Open register_url",
+                    "next_steps": [{"n": "1", "do": "Open register_url on a missing free/freemium provider"}],
+                    "ladder": [
+                        {"id": "ollama", "kind": "local", "monthly_tokens": 0},
+                        {"id": "openai", "kind": "paid", "api_key": "sk_secret"},
+                    ],
+                },
+                source=url,
+            )
+        if url.endswith("/api/ship/targets"):
+            return Reading(
+                ok=True,
+                data={
+                    "targets": [{"id": "docker"}, {"id": "secret-host"}],
+                    "openship": {
+                        "effective": "simulate",
+                        "api_url": "http://secret.example/api",
+                        "cli_path": "C:\\secret\\openship.exe",
+                    },
+                    "human_test_gate": "HT1",
+                    "live_url_observed": False,
+                    "live_public_url": "https://must-not-copy.example",
+                    "connection": {
+                        "connected": True,
+                        "mode": "gh_cli",
+                        "login": "jian-hong",
+                        "token": "ghs_secret",
+                    },
+                    "repos": [{"full_name": "secret/private", "html_url": "https://github.com/secret/private"}],
+                    "tabs": ["folder", "github"],
+                },
+                source=url,
+            )
         return Reading.unreachable(url, "unexpected")
 
     monkeypatch.setattr(sources, "loopback_get_json", fake)
+    _mute_ov_app(monkeypatch)
     reading = _REAL_OPENVAULT()
     assert reading.ok is True
     assert reading.data["up"] is True
@@ -596,8 +705,29 @@ def test_openvault_view_slims_usage_and_drops_ledger_rows(
     assert "events" not in usage
     blob = json.dumps(reading.data)
     assert "vk_secret" not in blob
+    assert "ghs_secret" not in blob
+    assert "secret/private" not in blob
     assert usage["summary"]["priced"] is False
     assert usage["summary"]["requests"] == 3
+    assert reading.data["register"]["priced"] is False
+    assert reading.data["register"]["next_steps"][0]["do"].startswith("Open register_url")
+    assert reading.data["register"]["ladder"][0]["id"] == "ollama"
+    assert "sk_secret" not in blob
+    assert "monthly_tokens" not in blob
+    ship = reading.data["ship"]
+    assert ship["connected"] is True
+    assert ship["mode"] == "gh_cli"
+    assert ship["repo_count"] == 1
+    assert ship["tabs"] == ["folder", "github", "url", "upload"]
+    assert ship["target_count"] == 2
+    assert ship["human_test_gate"] == "HT1"
+    assert ship["openship_effective"] == "simulate"
+    assert "repos" not in ship
+    assert "secret.example" not in blob
+    assert "openship.exe" not in blob
+    assert "must-not-copy.example" not in blob
+    assert reading.data["playground"]["up"] is False
+    assert "3010" in reading.data["playground"]["href"]
 
 
 def test_openvault_view_names_unread_usage(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -611,6 +741,7 @@ def test_openvault_view_names_unread_usage(monkeypatch: pytest.MonkeyPatch) -> N
         return Reading.unreachable(url, "unexpected")
 
     monkeypatch.setattr(sources, "loopback_get_json", fake)
+    _mute_ov_app(monkeypatch)
     reading = _REAL_OPENVAULT()
     assert reading.ok is True
     assert reading.data["usage"] is None
@@ -635,6 +766,7 @@ def test_openvault_view_healthz_and_usage_are_parallel(
         return Reading.unreachable(url, "unexpected")
 
     monkeypatch.setattr(sources, "loopback_get_json", fake)
+    _mute_ov_app(monkeypatch)
     t0 = time.perf_counter()
     reading = _REAL_OPENVAULT()
     elapsed = time.perf_counter() - t0
@@ -645,6 +777,30 @@ def test_openvault_view_healthz_and_usage_are_parallel(
     assert reading.ok is True
     assert reading.data["usage"] is None
     assert "hung" in (reading.data.get("usage_detail") or "")
+
+
+def test_openvault_view_names_playground(monkeypatch: pytest.MonkeyPatch) -> None:
+    from netie_control import sources
+
+    def fake_json(url: str, timeout: float = 2.0) -> Reading:
+        if url.endswith("/api/healthz"):
+            return Reading(ok=True, data={"status": "ok"}, source=url)
+        return Reading.unreachable(url, "unread")
+
+    def fake_status(url: str, timeout: float = 2.0, read: int = 512) -> Reading:
+        assert url.rstrip("/").endswith("3010")
+        return Reading(ok=True, data={"up": True}, source=url)
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake_json)
+    monkeypatch.setattr(sources, "loopback_get_status", fake_status)
+    reading = _REAL_OPENVAULT()
+    assert reading.ok is True
+    play = reading.data["playground"]
+    assert play["up"] is True
+    assert play["href"] == "http://127.0.0.1:3010/"
+    assert play["vault"].endswith("/vault")
+    assert play["playground"].endswith("/playground")
+    assert "does not start :3010" in play["rule"]
 
 
 def test_v1_belt_is_display_proxy_not_a_second_engine(
@@ -725,6 +881,28 @@ def test_crew_belt_view_names_both_misses(monkeypatch: pytest.MonkeyPatch) -> No
     assert "timed out" in (got.detail or "")
     assert "HTTP 404" in (got.detail or "")
     assert got.source.endswith("/v1/belt")
+
+
+def test_crew_belt_view_uses_sidecar_when_fork_404s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hung :8020 404s. Engine :8023 belt is display. Does not kill the fork."""
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        if "8023" in url and url.endswith("/v1/belt"):
+            return Reading(
+                ok=True,
+                source=url,
+                data={"bus": "github-issues", "wakes": [], "converse": False},
+            )
+        return Reading.unreachable(url, "HTTP 404")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    got = _REAL_CREW_BELT()
+    assert got.ok is True
+    assert "8023" in str(got.source)
+    assert (got.data or {}).get("bus") == "github-issues"
 
 
 def test_crew_belt_panel_renders_json_display_only(
@@ -1012,6 +1190,54 @@ def test_crew_health_caps_at_belt_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen["timeout"] == sources.CREW_BELT_WAIT_S
     assert seen["url"].endswith("/crew/health")
     assert reading.ok is False
+
+
+def test_crew_health_view_uses_sidecar_when_fork_hangs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Laptop-tools can read engine :8023 health without killing hung :8020."""
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        if "8023" in url and url.endswith("/crew/health"):
+            return Reading(
+                ok=True,
+                source=url,
+                data={
+                    "ok": True,
+                    "mcp": [{"name": "uacc", "armed": False, "running": False}],
+                    "engine": {"ok": True, "url": "http://127.0.0.1:8011"},
+                    "openvault": {"ok": True},
+                    "provider": {"label": "openvault", "model": "openvault/auto"},
+                },
+            )
+        return Reading.unreachable(url, "timed out")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    reading = _REAL_CREW_HEALTH()
+    assert reading.ok is True
+    assert "8023" in str(reading.source)
+    assert (reading.data or {}).get("engine_ok") is True
+    assert (reading.data or {}).get("openvault_ok") is True
+
+
+def test_constructor_live_url_follows_cortex_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control.sources import constructor_live_url
+
+    monkeypatch.delenv("NETIE_CONSTRUCTOR_URL", raising=False)
+    monkeypatch.setenv("NETIE_CORTEX_URL", "http://127.0.0.1:8011")
+    assert constructor_live_url() == "http://127.0.0.1:8011/cortex/constructor/"
+
+
+def test_cortex_base_defaults_to_live_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    from netie_control.sources import constructor_live_url, cortex_base
+
+    monkeypatch.delenv("NETIE_CORTEX_URL", raising=False)
+    monkeypatch.delenv("NETIE_CONSTRUCTOR_URL", raising=False)
+    assert cortex_base() == "http://127.0.0.1:8011"
+    assert constructor_live_url() == "http://127.0.0.1:8011/cortex/constructor/"
 
 
 def test_guess_lane_from_branch_prefix() -> None:
@@ -1448,6 +1674,10 @@ def test_v1_pickup_is_display_only_and_does_not_assign(
     assert "Pick up" in page
     assert "fetch(\"/v1/pickup\")" in page
     assert 'id="pickupBody"' in page
+    assert 'id="fetch"' in page
+    assert 'id="fetchBody"' in page
+    assert "Laptop fetch unread. GET /v1/fetch." in page
+    assert 'fetch("/v1/fetch")' in page
     assert "https://github.com/Netie-AI/Cortex/issues/6" not in page
     assert "work-row" in page
     assert 'class="workbench"' in page
@@ -1464,6 +1694,323 @@ def test_v1_pickup_is_display_only_and_does_not_assign(
     assert "Space Grotesk" in page
     assert client.post("/v1/pickup", json={"assign": "me"}).status_code != 200
     assert client.post("/v1/run").status_code == 405
+    fetch = client.get("/v1/fetch").json()
+    assert fetch["ok"] is True
+    assert fetch["display_only"] is True
+    assert fetch["fetch_owner"].startswith("Ticket Runner")
+    analog_next = (fetch.get("data") or {}).get("analog_next")
+    assert analog_next is not None
+    assert analog_next["verdict"] == "DISTILL"
+    assert analog_next["kind"] == "analog"
+    assert analog_next["href"] == "/v1/plans"
+    assert analog_next["lane"] not in {"1", "1b", "3", "9"}
+    assert analog_next["path"] != r"D:\myOpenManus"
+    assert analog_next["path"] != r"D:\mycogitorium"
+    assert analog_next["path"] != r"D:\myopenworker"
+    assert analog_next["name"]
+    assert analog_next["surface"] in {"page", "part", "integrated"}
+    assert analog_next["home"]
+    beat = fetch["data"]["heartbeat"]
+    assert isinstance(beat, list) and beat
+    products = {row["product"] for row in beat}
+    assert "Cortex" in products
+    assert "Constructor" in products
+    assert "Crew sidecar" in products
+    hrefs = " ".join(row.get("href") or "" for row in beat)
+    assert ":3010" not in hrefs
+    assert fetch["data"]["p1"] == "parked"
+    assert fetch["data"]["constructor_canvas"].endswith("/constructor/")
+    assert "Ontology" in fetch["data"]["dms_canvas"]
+    working = {row["product"]: row for row in fetch["data"]["working"]}
+    assert working["Constructor"]["href"].endswith("/constructor/")
+    assert working["Constructor"]["state"] in {"live", "unread"}
+    if working["Constructor"]["state"] == "live":
+        assert "Cortex compiles" in working["Constructor"]["detail"]
+    assert working["Crew sidecar"]["href"].endswith(":8023")
+    assert working["Crew sidecar"]["state"] == "unread"
+    assert working["Crew sidecar"]["up"] is False
+    assert "providers/free" in working["OpenVault free"]["href"]
+    assert working["OpenVault free"]["state"] == "unread"
+    assert "OpenIDE/ui" in working["OpenIDE"]["href"]
+    assert working["OpenIDE"]["state"] == "unread"
+    assert working["Pointer"]["state"] == "unread"
+    assert working["Cortex"]["state"] == "unread"
+    assert ":3010" not in " ".join(row["href"] for row in fetch["data"]["working"])
+    assert "COPY none" in fetch["data"]["grok"]
+    assert fetch["data"]["converse_founder"].endswith(":8020")
+    assert analog_next["verdict"] != "BAN"
+    assert analog_next["verdict"] != "PARK"
+    assert client.post("/v1/fetch", json={"run": True}).status_code != 200
+
+
+def test_v1_sidecar_is_display_only_and_does_not_rebind(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "crew_sidecar_view",
+        lambda timeout=CREW_BELT_WAIT_S: Reading(
+            ok=True,
+            source="http://127.0.0.1:8023/crew/health",
+            data={
+                "ok": True,
+                "computer_control": True,
+                "grok_offloaded": True,
+                "converse": "http://127.0.0.1:8023",
+                "fork": "http://127.0.0.1:8020",
+                "rule": "Sidecar is engine Crew.",
+                "engine_ok": True,
+                "engine_url": "http://127.0.0.1:8011",
+                "wakes_n": 0,
+                "wakes_view": "none",
+                "wakes_detail": "",
+            },
+        ),
+    )
+    body = client.get("/v1/sidecar").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["data"]["converse"] == "http://127.0.0.1:8023"
+    assert body["data"]["fork"] == "http://127.0.0.1:8020"
+    assert body["data"]["computer_control"] is True
+    assert body["data"]["wakes_view"] == "none"
+    page = client.get("/").text
+    assert "Crew sidecar :8023" in page
+    assert "Agents must not kill" in page
+    assert "Wakes none" in page
+    assert client.post("/v1/sidecar", json={"kill": "8020"}).status_code != 200
+    assert client.post("/crew/wakes", json={"note": "x"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_crew_sidecar_view_names_wakes_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        if url.endswith("/crew/health"):
+            return Reading(
+                ok=True,
+                source=url,
+                data={"ok": True, "computer_control": True, "mcp": [], "engine": {"ok": True}},
+            )
+        if url.endswith("/crew/wakes"):
+            return Reading(ok=True, source=url, data={"ok": True, "wakes": []})
+        return Reading.unreachable(url, "unexpected")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    got = _REAL_SIDECAR()
+    assert got.ok is True
+    assert got.data["wakes_view"] == "none"
+    assert got.data["wakes_n"] == 0
+    assert got.data["converse"].endswith(":8023")
+
+
+def test_v1_openide_is_display_only_and_does_not_run(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "openide_view",
+        lambda: Reading(
+            ok=True,
+            source="http://127.0.0.1:8765/api/health",
+            data={
+                "up": True,
+                "service": "airgpt",
+                "href": "http://127.0.0.1:8765/OpenIDE/ui/",
+                "host": "http://127.0.0.1:8765",
+                "ready": {"ok": True, "backend": "local", "missing": []},
+                "rule": "OpenIDE is D:\\AirGPT\\OpenIDE. Control lists it.",
+            },
+        ),
+    )
+    body = client.get("/v1/openide").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["data"]["up"] is True
+    assert "OpenIDE/ui" in body["data"]["href"]
+    page = client.get("/").text
+    assert "OpenIDE (AirGPT :8765)" in page
+    assert "OpenIDE/ui/" in page
+    assert "leftover TUI" in page
+    assert 'fetch("/v1/openide")' in page
+    assert client.post("/v1/openide", json={"run": True}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_v1_insights_is_display_only_and_does_not_unpark(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "cortex_view",
+        lambda: Reading(
+            ok=True,
+            source="http://127.0.0.1:8011",
+            data={
+                "up": True,
+                "constructor_live": "http://127.0.0.1:8011/cortex/constructor/",
+                "insights": {
+                    "pack": "dms",
+                    "agentic": True,
+                    "constructor_view": "gated",
+                    "constructor_detail": "HTTP 401",
+                    "ontology": None,
+                    "p1": "parked",
+                    "palantir_lite": {
+                        "p1": "parked",
+                        "define_data": "define data",
+                        "govern_agents": "govern agents",
+                        "business_insights": "business insights",
+                        "engine": "Cortex Constructor. Control does not POST generate.",
+                    },
+                    "ontology_owner": "Ontology stays Cortex Constructor. P1 parked.",
+                },
+            },
+        ),
+    )
+    body = client.get("/v1/insights").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["run_owner"] == "Cortex"
+    assert body["data"]["insights"]["constructor_view"] == "gated"
+    assert body["data"]["insights"]["p1"] == "parked"
+    lite = body["data"]["insights"]["constructor_seeds"]
+    assert lite["p1"] == "parked"
+    assert body["data"]["insights"]["palantir_lite"]["p1"] == "parked"
+    assert "define data" in lite["define_data"]
+    assert "govern agents" in lite["govern_agents"]
+    assert "Control does not POST generate" in lite["engine"]
+    assert "Ontology" in lite["dms_canvas"]
+    assert "/constructor/" in lite["dms_canvas"]
+    assert "FUTURE_BUILD_ASSET_GUIDE" in lite["guide"]
+    assert "P1 parked" in body["data"]["ontology_owner"]
+    page = client.get("/").text
+    assert "Constructor ontology (display)" in page
+    assert "p1=parked" in page
+    assert "Constructor seeds (generate" in page
+    assert "DMS Ontology opens Constructor canvas" in page
+    assert "Constructor seeds on the sketch" in page
+    assert "GET /v1/insights" in page
+    assert client.post("/v1/insights", json={"unpark": "P1"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/goal").status_code == 405
+
+
+def test_openide_view_slims_ready_and_drops_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        if url.endswith("/api/health"):
+            return Reading(ok=True, source=url, data={"ok": True, "service": "airgpt"})
+        if url.endswith("/api/openide/ready"):
+            return Reading(
+                ok=True,
+                source=url,
+                data={
+                    "ok": True,
+                    "backend": "local",
+                    "token": "secret-token",
+                    "usable_count": 10,
+                    "need": "any free-tier or local key",
+                    "providers": [{"id": "openai", "masked": "sk-secret"}],
+                    "missing": ["gh"],
+                },
+            )
+        return Reading.unreachable(url, "unexpected")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    got = _REAL_OPENIDE()
+    assert got.ok is True
+    blob = json.dumps(got.data)
+    assert "secret-token" not in blob
+    assert "sk-secret" not in blob
+    assert "providers" not in blob
+    assert (got.data or {}).get("ready", {}).get("missing") == ["gh"]
+    assert (got.data or {}).get("ready", {}).get("usable_count") == 10
+    assert "leftover TUI" in str((got.data or {}).get("leftover") or "")
+
+
+def test_unreachable_openide_is_stated(client: TestClient) -> None:
+    page = client.get("/").text
+    assert "OpenIDE (AirGPT :8765)" in page
+    assert "test: no live OpenIDE" in page
+    assert "GET /v1/openide" in page
+
+
+def test_v1_pointer_is_display_only_and_does_not_start(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "pointer_view",
+        lambda: Reading(
+            ok=True,
+            source=r"D:\Pointer\electron\netie\plan-guard.js",
+            data={
+                "up": False,
+                "confirm_gated": True,
+                "nod_confirm": True,
+                "tree": r"D:\Pointer",
+                "rule": "Control does not start Pointer (R-0015).",
+                "detail": "",
+            },
+        ),
+    )
+    body = client.get("/v1/pointer").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["data"]["confirm_gated"] is True
+    assert body["data"]["up"] is False
+    page = client.get("/").text
+    assert "Pointer (confirm-gated HUD)" in page
+    assert "_requireConfirm" in page
+    assert 'fetch("/v1/pointer")' in page
+    assert client.post("/v1/pointer", json={"start": True}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_pointer_view_reads_confirm_gate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from netie_control import sources
+
+    guard_dir = tmp_path / "electron" / "netie"
+    guard_dir.mkdir(parents=True)
+    (guard_dir / "plan-guard.js").write_text(
+        "return { _requireConfirm: true };\n", encoding="utf-8"
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "MODES.md").write_text(
+        "- **Nod confirm** (default ON)\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("POINTER_ROOT", str(tmp_path))
+    monkeypatch.setattr(sources, "_win_running_images", lambda wanted: set())
+    monkeypatch.setattr(sources, "pointer_view", _REAL_POINTER)
+    reading = _REAL_POINTER()
+    assert reading.ok is True
+    assert reading.data["confirm_gated"] is True
+    assert reading.data["nod_confirm"] is True
+    assert reading.data["up"] is False
+
+
+def test_unreachable_pointer_is_stated(client: TestClient) -> None:
+    page = client.get("/").text
+    assert "Pointer (confirm-gated HUD)" in page
+    assert "test: no live Pointer" in page
+    assert "GET /v1/pointer" in page
 
 
 def test_v1_pickup_ok_without_live_gh(
@@ -1509,6 +2056,12 @@ def test_v1_pickup_ok_without_live_gh(
     assert client.post("/v1/secrets").status_code == 405
     assert client.post("/v1/route").status_code == 405
     assert client.post("/v1/goal").status_code == 405
+    fetch = client.get("/v1/fetch").json()
+    assert fetch["data"]["next"]["ticket"] == "Netie-AI/dms#40"
+    assert fetch["data"]["seat_owner"].startswith("Ticket Runner")
+    assert fetch["data"]["p1"] == "parked"
+    assert fetch["data"]["constructor_canvas"].endswith("/constructor/")
+    assert fetch["data"]["analog_next"]["verdict"] == "DISTILL"
     page = client.get("/").text
     assert "<form" not in page.lower()
     assert "Crew conveyor (display-only)" in page
@@ -1671,6 +2224,7 @@ def test_constructor_missing_skin_is_503_unread(
     assert res.status_code == 503
     assert 'class="absent"' in res.text
     assert "Constructor skin unread" in res.text
+    assert "cortex/constructor/" in res.text
     assert "POST /v1/run stays 405" in res.text
     assert '"detail"' not in res.text
     missing_js = client.get("/constructor/app.js")
@@ -1705,6 +2259,13 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["assign_owner"] == "GitHub Issues + CLAIMS.json"
     assert any(u.endswith("/v1/pickup") for u in body["before_seating"])
     assert any(u.endswith("/v1/coordinate") for u in body["before_seating"])
+    assert any(u.endswith("/v1/plans") for u in body["before_seating"])
+    assert any(u.endswith("/v1/prompts") for u in body["before_seating"])
+    assert any(u.endswith("/v1/fetch") for u in body["before_seating"])
+    assert any(u.endswith("/v1/sidecar") for u in body["before_seating"])
+    assert any(u.endswith("/v1/openide") for u in body["before_seating"])
+    assert any(u.endswith("/v1/insights") for u in body["before_seating"])
+    assert any(u.endswith("/v1/pointer") for u in body["before_seating"])
     assert "/v1/run" in body["forbidden"]
     assert body["desk"]["talk_probe"] == "/crew/wakes"
     assert body["desk"]["you_steps"] == 8
@@ -1712,6 +2273,7 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["desk"]["board_wait_s"] == 4.0
     assert body["desk"]["pickup_board_wait_s"] == 1.5
     assert body["desk"]["kb_wait_s"] == 1.5
+    assert body["desk"]["airgpt_wait_s"] == 1.5
     assert body["desk"]["cortex_wait_s"] == 1.5
     assert body["desk"]["crew_belt_wait_s"] == 1.5
     assert body["desk"]["openvault_usage_wait_s"] == 1.5
@@ -1938,6 +2500,9 @@ def test_cortex_view_followups_are_parallel_and_capped(
     assert reading.data["features"] is None
     assert "hung" in (reading.detail or "")
     assert "hung" in (reading.data.get("features_detail") or "")
+    insights = reading.data.get("insights") or {}
+    assert insights.get("constructor_view") == "gated"
+    assert insights.get("p1") == "parked"
     assert sources.CORTEX_WAIT_S <= 1.5
 
 
@@ -1964,6 +2529,60 @@ def test_cortex_view_health_and_followups_do_not_stack(
     assert reading.data["features"] is None
     assert "hung" in (reading.detail or "")
     assert "hung" in (reading.data.get("features_detail") or "")
+    insights = reading.data.get("insights") or {}
+    assert insights.get("constructor_view") == "gated"
+    assert insights.get("p1") == "parked"
+
+
+def test_cortex_view_ontology_401_is_gated_not_scraped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    def fake(url: str, timeout: float = 2.0) -> Reading:
+        if url.endswith("/health"):
+            return Reading(ok=True, data={"status": "ok", "pack": "dms"}, source=url)
+        if url.endswith("/health/features"):
+            return Reading(
+                ok=True,
+                data={"engine_version": "2.5.0", "extras": {"agentic": True}},
+                source=url,
+            )
+        if url.endswith("/api/engine/activity"):
+            return Reading(ok=True, data={"ok": True}, source=url)
+        return Reading.unreachable(url, "unexpected")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake)
+    reading = _REAL_CORTEX()
+    assert reading.ok is True
+    insights = reading.data["insights"]
+    assert insights["pack"] == "dms"
+    assert insights["agentic"] is True
+    assert insights["constructor_view"] == "gated"
+    assert insights["ontology"] is None
+    assert insights["p1"] == "parked"
+    assert insights["constructor_seeds"]["p1"] == "parked"
+    assert insights["palantir_lite"]["p1"] == "parked"
+    assert "SECRET_SKU" not in json.dumps(reading.data)
+
+
+def test_slim_constructor_ontology_is_counts_only() -> None:
+    from netie_control.sources import slim_constructor_ontology
+
+    onto = slim_constructor_ontology(
+        {
+            "ok": True,
+            "objects": {"SECRET_SKU": {"points": {"cost": "number"}}},
+            "actions": ["tool.call"],
+            "fetch_places": ["maps.venues", "crm.contacts"],
+        }
+    )
+    blob = json.dumps(onto)
+    assert "SECRET_SKU" not in blob
+    assert onto["object_count"] == 1
+    assert onto["action_count"] == 1
+    assert onto["fetch_place_count"] == 2
+    assert onto["p1"] == "parked"
 
 
 def test_kb_view_caps_at_kb_wait(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2104,6 +2723,7 @@ def test_desktop_surfaces_snapshot_marks_present_without_tasklist(monkeypatch) -
     by_name = {row["name"]: row for row in reading.data["rows"]}
     assert by_name["Cursor"]["present"] is True
     assert by_name["Grok Bot"]["present"] is False
+    assert by_name["Pointer"]["present"] is False
     assert "unread" not in by_name["Grok Bot"]
     assert reading.source == "process snapshot"
 
@@ -2263,6 +2883,24 @@ def test_crew_talk_view_needs_engine_wakes(monkeypatch: pytest.MonkeyPatch) -> N
     assert str(reading.source).endswith("/crew/wakes")
 
 
+def test_crew_talk_view_uses_sidecar_when_fork_404s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Talk live can follow engine :8023 wakes without killing hung :8020."""
+    from netie_control import sources
+
+    def fake_json(url: str, timeout: float = 2.0) -> Reading:
+        if "8023" in url and url.endswith("/crew/wakes"):
+            return Reading(ok=True, source=url, data={"ok": True, "wakes": []})
+        return Reading.unreachable(url, "HTTP 404")
+
+    monkeypatch.setattr(sources, "loopback_get_json", fake_json)
+    reading = _REAL_CREW_TALK()
+    assert reading.ok is True
+    assert reading.data == {"up": True, "wakes": True}
+    assert "8023" in str(reading.source)
+
+
 def test_crew_talk_view_discards_html(monkeypatch: pytest.MonkeyPatch) -> None:
     from netie_control import sources
 
@@ -2303,6 +2941,11 @@ def test_get_home_talk_and_health_do_not_stack(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(sources, "crew_talk_view", slow_talk)
     monkeypatch.setattr(sources, "crew_health_view", slow_health)
+    instant = lambda: Reading.unreachable("test", "instant")
+    monkeypatch.setattr(sources, "you_desk", instant)
+    monkeypatch.setattr(sources, "claims_board", instant)
+    monkeypatch.setattr(sources, "incomplete_plans", instant)
+    monkeypatch.setattr(sources, "prompt_catalog", instant)
     t0 = time.perf_counter()
     blob = state(include_gate=False, include_board=False, include_pads=False)
     elapsed = time.perf_counter() - t0
@@ -2340,4 +2983,121 @@ def test_v1_coordinate_talk_and_cortex_do_not_stack(
     assert client.post("/v1/secrets").status_code == 405
     assert client.post("/v1/route").status_code == 405
     assert client.post("/v1/goal").status_code == 405
+
+
+def test_v1_plans_maps_analog_trees_and_does_not_assign(client: TestClient) -> None:
+    """Control shows unfinished analog lifts. It does not unpark or copy."""
+    body = client.get("/v1/plans").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["run_owner"] == "Cortex"
+    data = body["data"]
+    analog = {row["path"]: row for row in data["analog"]}
+    assert analog[r"D:\myn8n"]["verdict"] == "BAN"
+    assert analog[r"D:\myn8n"]["name"] == "Constructor"
+    assert analog[r"D:\myn8n"]["surface"] == "frozen"
+    assert analog[r"D:\myn8n"]["home"] == r"D:\Constructor"
+    assert analog[r"D:\mybot"]["verdict"] == "SKIP"
+    assert analog[r"D:\myclaude-code"]["verdict"] == "BAN"
+    assert analog[r"D:\myopenworker"]["verdict"] == "SHIPPED"
+    assert analog[r"D:\myOpenManus"]["verdict"] == "SHIPPED"
+    assert analog[r"D:\Netie\mypaperclip"]["verdict"] == "SHIPPED"
+    assert analog[r"D:\Netie\mygastown"]["name"] == "Crew"
+    assert analog[r"D:\Netie\mygastown"]["surface"] == "integrated"
+    assert analog[r"D:\Netie\mygastown"]["home"] == r"D:\Cortex\CortexOS\crew"
+    assert analog[r"D:\Cortex\myrakazo"]["verdict"] == "SKIP"
+    assert analog[r"D:\OpenWillow"]["verdict"] == "DISTILL"
+    beat = data["heartbeat"]
+    assert any(row.get("product") == "Cortex" for row in beat)
+    assert any(row.get("role") == "founder rebind" for row in beat)
+    page = client.get("/").text
+    assert "Incomplete plans" in page
+    assert 'fetch("/v1/plans")' in page
+    assert "Plans unread. GET /v1/plans." in page
+    assert "Heartbeat labels (no extra probe)" in page
+    assert "Laptop fetch analog leftover is GET /v1/fetch analog_next" in page
+    assert analog[r"D:\myopencode"]["product"] == "AirGPT OpenIDE"
+    assert analog[r"D:\mycogitorium"]["verdict"] == "PARK"
+    assert analog[r"D:\mymem0"]["verdict"] == "DISTILL"
+    assert analog[r"D:\mymempalace"]["verdict"] == "DISTILL"
+    assert analog[r"D:\Netie\mygastown"]["tree"] in {"present", "absent"}
+    assert data["analog_present"] + data["analog_absent"] == len(data["analog"])
+    assert "Ontology stays Cortex. P1 parked" in page
+    assert "Palantir" not in page
+    assert analog[r"D:\myopencode"]["name"] == "OpenIDE leftover TUI"
+    assert "<code>/v1/plans</code>" in page
+    assert client.post("/v1/plans", json={"unpark": "P1"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/goal").status_code == 405
+
+
+def test_v1_prompts_lists_surfaces_and_does_not_edit(client: TestClient) -> None:
+    """Control shows where prompts live. It does not rewrite them."""
+    body = client.get("/v1/prompts").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["run_owner"] == "Cortex"
+    items = {row["id"]: row for row in body["data"]["items"]}
+    assert items["lane-15"]["verdict"] == "DISTILL"
+    assert items["lane-16"]["verdict"] == "BAN"
+    assert items["crew-manager"]["verdict"] == "ALREADY"
+    assert items["crew-skills"]["tree"] in {"present", "absent"}
+    if items["crew-skills"]["tree"] == "present":
+        assert "maintain.md" in items["crew-skills"]["files"]
+    pastes = {row["id"]: row for row in body["data"]["pastes"]}
+    assert body["data"]["wip_cap"] == 2
+    assert "grok-master" in pastes
+    assert pastes["grok-master"]["product"] == "Crew coordinator"
+    assert "Live products (power internally)" in pastes["grok-master"]["paste"]
+    assert "crew-long-horizon" in pastes
+    assert "prd-agent" in pastes
+    assert "asset-guide" in pastes
+    assert "FUTURE_BUILD_ASSET_GUIDE" in pastes["asset-guide"]["paste"]
+    assert "WP-003" in pastes["asset-guide"]["paste"]
+    assert "semantic_layer" in pastes["asset-guide"]["paste"]
+    assert "Do not redesign" in pastes["prd-agent"]["paste"]
+    assert "Reuse analog segments" in pastes["grok-master"]["paste"]
+    assert "Paste prd-agent first" in pastes["grok-master"]["paste"]
+    assert "D:\\mybot" in pastes["grok-master"]["paste"]
+    assert "WIP two" in pastes["grok-master"]["paste"]
+    assert "Do not paste Anthropic" in pastes["grok-master"]["paste"]
+    page = client.get("/").text
+    assert "Prompt surfaces" in page
+    assert "prd-agent" in page
+    assert "Do not redesign" in page
+    assert 'fetch("/v1/prompts")' in page
+    assert "Prompts unread. GET /v1/prompts." in page
+    assert "<code>/v1/prompts</code>" in page
+    assert "Do not paste Anthropic" in page
+    assert client.post("/v1/prompts", json={"rewrite": True}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_v1_plans_names_absent_parking_unread(
+    client: TestClient, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing PARKING_LOT is unread, not an empty finished estate (R-0011)."""
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "_cortex_root", lambda: tmp_path / "no-cortex")
+    monkeypatch.setattr(sources, "CONTROL_ROOT", tmp_path / "no-control")
+    body = client.get("/v1/plans").json()
+    assert body["ok"] is True
+    unread = body["data"]["parking_unread"]
+    assert unread, "missing parking lots must be named"
+    assert any("absent" in row for row in unread)
+    assert "idle" not in (body.get("detail") or "").lower()
+    assert client.post("/v1/plans", json={"close": True}).status_code != 200
+
+
+def test_v1_contract_includes_plans_before_seating(client: TestClient) -> None:
+    body = client.get("/v1/contract").json()
+    assert any(u.endswith("/v1/plans") for u in body["before_seating"])
+    assert any(u.endswith("/v1/prompts") for u in body["before_seating"])
+    assert any(u.endswith("/v1/fetch") for u in body["before_seating"])
+    assert any(u.endswith("/v1/sidecar") for u in body["before_seating"])
+    assert any(u.endswith("/v1/openide") for u in body["before_seating"])
+    assert any(u.endswith("/v1/insights") for u in body["before_seating"])
+    assert any(u.endswith("/v1/pointer") for u in body["before_seating"])
+    assert body["desk"]["you_steps"] == 8
 
