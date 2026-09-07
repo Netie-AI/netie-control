@@ -3160,6 +3160,11 @@ def test_v1_ops_is_display_only_poll_and_does_not_assign(
     assert "setInterval(tickOps, 15000)" in page
     assert "function tickOps" in page
     assert "RUNNING / SEATED" in page
+    assert "board-slices" in page
+    assert 'sliceCol("Open issues"' in page
+    assert 'sliceCol("Completed"' in page
+    assert 'sliceCol("Open PRs"' in page
+    assert 'sliceCol("Actions"' in page
     assert "One writer per unused branch" in page
     assert "<form" not in page.lower()
     assert "<iframe" not in page.lower()

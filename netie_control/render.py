@@ -168,20 +168,11 @@ def _ticket_card(r: dict[str, Any]) -> str:
     )
 
 
-def _kanban_by_repo(rows: list[dict[str, Any]], empty: str) -> str:
-    if not rows:
-        return f'<p class="absent">{_esc(empty)}</p>'
-    by_repo: dict[str, list[dict[str, Any]]] = {}
-    for r in rows[:80]:
-        by_repo.setdefault(str(r.get("repo") or "?"), []).append(r)
-    cols = []
-    for repo, items in by_repo.items():
-        cards = "".join(_ticket_card(x) for x in items[:24])
-        cols.append(
-            f'<section class="kcol"><h3>{_esc(repo.split("/")[-1])} {len(items)}</h3>'
-            f"{cards}</section>"
-        )
-    return '<div class="kanban">' + "".join(cols) + "</div>"
+def _slice_col(title: str, rows: list[dict[str, Any]], empty: str) -> str:
+    cards = "".join(_ticket_card(x) for x in rows[:24]) or f'<p class="absent">{_esc(empty)}</p>'
+    return (
+        f'<section class="kcol"><h3>{_esc(title)} {len(rows)}</h3>{cards}</section>'
+    )
 
 
 def _board_body(d: dict[str, Any]) -> str:
@@ -199,15 +190,13 @@ def _board_body(d: dict[str, Any]) -> str:
             f'<p class="absent">Live poll GET /v1/ops every {_esc(poll_s or "15")}s. '
             "Manual Refresh is not the only path.</p>"
         ),
+        '<div class="kanban board-slices">',
+        _slice_col("Open issues", open_rows, "No open items returned."),
+        _slice_col("Completed", completed, "No completed issues returned."),
+        _slice_col("Open PRs", prs, "No open PRs returned."),
+        _slice_col("Actions", actions, "No Actions runs returned."),
+        "</div>",
     ]
-    bits.append("<h3>Open issues</h3>")
-    bits.append(_kanban_by_repo(open_rows, "No open items returned."))
-    bits.append(f"<h3>Completed {len(completed)}</h3>")
-    bits.append(_kanban_by_repo(completed, "No completed issues returned."))
-    bits.append(f"<h3>Open PRs {len(prs)}</h3>")
-    bits.append(_kanban_by_repo(prs, "No open PRs returned."))
-    bits.append(f"<h3>Actions {len(actions)}</h3>")
-    bits.append(_kanban_by_repo(actions, "No Actions runs returned."))
     if d.get("unreachable"):
         bits.append(
             '<p class="absent">Not shown, unreachable: '
@@ -1636,23 +1625,6 @@ the founder's desktop software (R-0015).</p></div>
       + esc(ticket) + '</code><span class="work-row__title">' + esc(r.title)
       + '</span><span class="tags">' + tags + "</span>" + actBtns(href, "Open") + "</div>";
   }}
-  function kanbanByRepo(rows, empty) {{
-    rows = (rows || []).slice(0, 80);
-    if (!rows.length) return '<p class="absent">' + esc(empty) + "</p>";
-    var byRepo = {{}};
-    rows.forEach(function (r) {{
-      var repo = String(r.repo || "?");
-      if (!byRepo[repo]) byRepo[repo] = [];
-      byRepo[repo].push(r);
-    }});
-    var cols = Object.keys(byRepo).map(function (repo) {{
-      var items = byRepo[repo];
-      var cards = items.slice(0, 24).map(ticketCardHtml).join("");
-      return '<section class="kcol"><h3>' + esc(String(repo).split("/").pop()) + " " + items.length
-        + "</h3>" + cards + "</section>";
-    }}).join("");
-    return '<div class="kanban">' + cols + "</div>";
-  }}
   function boardHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
@@ -1665,18 +1637,22 @@ the founder's desktop software (R-0015).</p></div>
       extra = '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
     }}
     var poll = d.poll_s || 15;
+    function sliceCol(title, rows, empty) {{
+      rows = rows || [];
+      var cards = rows.slice(0, 24).map(ticketCardHtml).join("")
+        || ('<p class="absent">' + esc(empty) + "</p>");
+      return '<section class="kcol"><h3>' + esc(title) + " " + rows.length + "</h3>" + cards + "</section>";
+    }}
     return "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign. "
       + "PRs show occupied heads. Actions status is GitHub's, never invented green.</p>"
       + '<p class="absent">Live poll GET /v1/ops every ' + esc(poll)
       + "s. Manual Refresh is not the only path.</p>"
-      + "<h3>Open issues</h3>" + kanbanByRepo(openRows, "No open items returned.")
-      + "<h3>Completed " + completed.length + "</h3>"
-      + kanbanByRepo(completed, "No completed issues returned.")
-      + "<h3>Open PRs " + prs.length + "</h3>"
-      + kanbanByRepo(prs, "No open PRs returned.")
-      + "<h3>Actions " + actions.length + "</h3>"
-      + kanbanByRepo(actions, "No Actions runs returned.")
-      + extra;
+      + '<div class="kanban board-slices">'
+      + sliceCol("Open issues", openRows, "No open items returned.")
+      + sliceCol("Completed", completed, "No completed issues returned.")
+      + sliceCol("Open PRs", prs, "No open PRs returned.")
+      + sliceCol("Actions", actions, "No Actions runs returned.")
+      + "</div>" + extra;
   }}
   function pickupHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);

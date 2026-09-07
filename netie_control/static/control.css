@@ -432,6 +432,13 @@ th {
   gap: 0.75rem;
   margin-top: 0.6rem;
 }
+.board-slices {
+  grid-template-columns: 1fr 1fr;
+}
+.workbench .board-slices .kcol {
+  max-height: 14rem;
+  overflow: auto;
+}
 .kcol {
   background: rgba(0,0,0,.22);
   border: 1px solid var(--rk-hairline);
