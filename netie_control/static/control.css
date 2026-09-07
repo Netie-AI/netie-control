@@ -316,6 +316,24 @@ a:hover { text-decoration: underline; }
   overflow: auto;
   max-height: none;
 }
+.workbench #boardBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.workbench .kanban.board-slices {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: 1fr 1fr;
+  overflow: visible;
+}
+.workbench .board-slices .kcol {
+  max-height: 12rem;
+  min-height: 7rem;
+  overflow: auto;
+}
 .workbench .work-row {
   display: flex;
   flex-direction: column;
@@ -434,10 +452,6 @@ th {
 }
 .board-slices {
   grid-template-columns: 1fr 1fr;
-}
-.workbench .board-slices .kcol {
-  max-height: 14rem;
-  overflow: auto;
 }
 .kcol {
   background: rgba(0,0,0,.22);

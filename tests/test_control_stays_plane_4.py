@@ -1584,6 +1584,8 @@ def test_v1_pickup_is_display_only_and_does_not_assign(
     assert "YOU - founder actions" in page
     assert 'class="strip"' in page
     assert 'id="focus"' in page
+    assert "Selected ticket" in page
+    assert page.index('id="focus"') < page.index('id="coordinate"')
     assert "data-href=" in page
     assert "Space Grotesk" in page
     assert client.post("/v1/pickup", json={"assign": "me"}).status_code != 200

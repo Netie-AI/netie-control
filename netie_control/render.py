@@ -1396,7 +1396,6 @@ Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> 
 Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.</footer>
 </main>
 <aside class="inspector">
-{_panel("Coordinate - invoke owners", state.get("coordinate") or {{}}, _coordinate_body, "", "coordinate", _stat(state.get("coordinate") or {{}}, "live"))}
 <div class="panel" id="focus"><h2>Selected ticket</h2>
 <p id="focusEmpty">Click a pickup, board, fleet, or rail row. Control does not assign.</p>
 <div id="focusBody" hidden>
@@ -1410,6 +1409,7 @@ Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this she
 <p class="absent">Ticket Runner seats on GitHub + CLAIMS.json. Control does not spawn. POST /v1/run stays 405. Cortex#51 is kind=task, one writer per branch.</p>
 </div>
 </div>
+{_panel("Coordinate - invoke owners", state.get("coordinate") or {{}}, _coordinate_body, "", "coordinate", _stat(state.get("coordinate") or {{}}, "live"))}
 {_panel("YOU - founder actions", state.get("you") or {{}}, _you_body, "", "you")}
 <div class="panel" id="feedback"><h2>If this feels wrong</h2>
 <p>Comment on that GitHub issue. GitHub is the bus (W-0005). This page does not auto-route chat to an agent.</p>
