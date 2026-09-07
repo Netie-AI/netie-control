@@ -34,6 +34,10 @@ CREW_BELT_WAIT_S = 1.5
 OPENVAULT_USAGE_WAIT_S = 1.5
 PICKUP_BOARD_WAIT_S = 1.5
 BOARD_WAIT_S = 4.0
+OPS_POLL_S = 15.0
+RUNNING_ROLES = frozenset({"SEATED", "RUNNING"})
+OCCUPIED_ROLES = frozenset({"SEATED", "RUNNING", "HELD", "EXTRA_STOP"})
+BOARD_SLICES = ("open", "completed", "prs", "actions")
 KB_WAIT_S = 1.5
 CORTEX_WAIT_S = 1.5
 SIDECAR_WAIT_S = 1.5
@@ -197,6 +201,8 @@ def agent_contract() -> dict[str, Any]:
             "usage_probe": "/api/usage",
             "board_wait_s": BOARD_WAIT_S,
             "pickup_board_wait_s": PICKUP_BOARD_WAIT_S,
+            "ops_poll_s": OPS_POLL_S,
+            "ops_poll": "/v1/ops",
             "kb_wait_s": KB_WAIT_S,
             "cortex_wait_s": CORTEX_WAIT_S,
             "crew_belt_wait_s": CREW_BELT_WAIT_S,
@@ -209,6 +215,7 @@ def agent_contract() -> dict[str, Any]:
                 "/v1/fetch",
                 "/v1/sidecar",
                 "/v1/launchers",
+                "/v1/ops",
             ],
         },
         "rule": (
@@ -967,19 +974,32 @@ def fleet_from_claims(
                 "href": ticket_github_url(str(item.get("ticket") or key)),
             }
         )
-    rank = {"SEATED": 0, "HELD": 1, "EXTRA_STOP": 2, "UNSEATED": 3}
+    rank = {"RUNNING": 0, "SEATED": 0, "HELD": 1, "EXTRA_STOP": 2, "UNSEATED": 3}
     rows.sort(
         key=lambda row: (rank.get(str(row["role"]), 9), str(row.get("repo")), str(row.get("ticket")))
+    )
+    occupied_heads = sorted(
+        {
+            str(row.get("head") or "")
+            for row in rows
+            if row.get("role") in RUNNING_ROLES and row.get("head")
+        }
     )
     return {
         "ts": payload.get("ts"),
         "seated": sum(1 for row in rows if row["role"] == "SEATED"),
+        "running": sum(1 for row in rows if row["role"] in RUNNING_ROLES),
         "held": sum(1 for row in rows if row["role"] in {"HELD", "EXTRA_STOP"}),
+        "occupied_heads": occupied_heads,
         "rows": rows,
         "lane_rule": (
             "Lane is a guess from branch prefix (estate-watchdog.ps1 family). "
             "cursor/* means Cursor, not proof of cloud vs this PC. "
             "claude/* or worktree-* means Claude. else mixed."
+        ),
+        "parallel_rule": (
+            "One writer per unused branch per ticket. RUNNING/SEATED heads are occupied. "
+            "Control displays CLAIMS; it does not assign. POST /v1/run stays 405."
         ),
     }
 
@@ -1001,7 +1021,7 @@ def pickup_tray(
         if not isinstance(row, dict):
             continue
         href = str(row.get("href") or "")
-        if row.get("role") == "SEATED" and href:
+        if row.get("role") in OCCUPIED_ROLES and href:
             seated.add(href)
         if row.get("role") != "UNSEATED" or not href or href in seen:
             continue
@@ -1077,7 +1097,7 @@ def board_if_quick(wait_s: float | None = None) -> Reading:
 
     def _call() -> Reading:
         try:
-            return board(timeout=timeout)
+            return board(timeout=timeout, slices=("open",))
         except TypeError:
             return board()
 
@@ -1773,13 +1793,14 @@ def estate_gate() -> Reading:
     )
 
 
-def _gh_open_issues(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict[str, Any]], str]:
-    """One repo's open issues. Empty rows + reason when gh cannot answer."""
+def _gh_json(argv: list[str], *, repo: str, timeout: float) -> tuple[list[Any], str]:
+    """One gh JSON list. Empty rows + reason when gh cannot answer."""
     try:
         proc = subprocess.run(
-            ["gh", "issue", "list", "--repo", repo, "--state", "open",
-             "--limit", "50", "--json", "number,title,labels,url"],
-            capture_output=True, text=True, timeout=timeout,
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -1790,17 +1811,128 @@ def _gh_open_issues(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict
         items = json.loads(proc.stdout or "[]")
     except json.JSONDecodeError as exc:
         return [], f"{repo}: {exc}"
+    if not isinstance(items, list):
+        return [], f"{repo}: gh JSON was not a list"
+    return items, ""
+
+
+def _issue_row(repo: str, it: dict[str, Any], *, kind: str) -> dict[str, Any]:
+    labels = [x.get("name") for x in (it.get("labels") or []) if isinstance(x, dict)]
+    logins = [
+        str(x.get("login") or "")
+        for x in (it.get("assignees") or [])
+        if isinstance(x, dict) and x.get("login")
+    ]
+    return {
+        "repo": repo,
+        "number": it.get("number"),
+        "title": it.get("title"),
+        "url": it.get("url") or ticket_github_url(f"{repo}#{it.get('number')}"),
+        "is_epic": "epic" in labels,
+        "blocked": "blocked" in labels,
+        "assignees": logins,
+        "kind": kind,
+        "closed_at": it.get("closedAt") or "",
+    }
+
+
+def _gh_open_issues(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict[str, Any]], str]:
+    """One repo's open issues. Empty rows + reason when gh cannot answer."""
+    items, why = _gh_json(
+        [
+            "gh", "issue", "list", "--repo", repo, "--state", "open",
+            "--limit", "50", "--json", "number,title,labels,url,assignees",
+        ],
+        repo=repo,
+        timeout=timeout,
+    )
+    if why:
+        return [], why
+    return [_issue_row(repo, it, kind="issue") for it in items if isinstance(it, dict)], ""
+
+
+def _gh_closed_issues(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict[str, Any]], str]:
+    """Recently closed issues. Display only. Not a second SoT."""
+    items, why = _gh_json(
+        [
+            "gh", "issue", "list", "--repo", repo, "--state", "closed",
+            "--limit", "20", "--json", "number,title,labels,url,assignees,closedAt",
+        ],
+        repo=repo,
+        timeout=timeout,
+    )
+    if why:
+        return [], why
+    return [_issue_row(repo, it, kind="completed") for it in items if isinstance(it, dict)], ""
+
+
+def _gh_open_prs(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict[str, Any]], str]:
+    """Open PRs. Head branch is occupancy, not an assignment."""
+    items, why = _gh_json(
+        [
+            "gh", "pr", "list", "--repo", repo, "--state", "open",
+            "--limit", "30", "--json", "number,title,url,headRefName,isDraft,updatedAt",
+        ],
+        repo=repo,
+        timeout=timeout,
+    )
+    if why:
+        return [], why
     rows: list[dict[str, Any]] = []
     for it in items:
-        labels = [x.get("name") for x in (it.get("labels") or [])]
-        rows.append({
-            "repo": repo,
-            "number": it.get("number"),
-            "title": it.get("title"),
-            "url": it.get("url") or ticket_github_url(f"{repo}#{it.get('number')}"),
-            "is_epic": "epic" in labels,
-            "blocked": "blocked" in labels,
-        })
+        if not isinstance(it, dict):
+            continue
+        num = it.get("number")
+        rows.append(
+            {
+                "repo": repo,
+                "number": num,
+                "title": it.get("title"),
+                "url": it.get("url") or f"https://github.com/{repo}/pull/{num}",
+                "head": it.get("headRefName") or "",
+                "draft": bool(it.get("isDraft")),
+                "updated_at": it.get("updatedAt") or "",
+                "kind": "pr",
+            }
+        )
+    return rows, ""
+
+
+def _gh_workflow_runs(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict[str, Any]], str]:
+    """Recent Actions runs. Status is GitHub's, never invented green."""
+    items, why = _gh_json(
+        [
+            "gh", "run", "list", "--repo", repo, "--limit", "12",
+            "--json",
+            "databaseId,name,displayTitle,status,conclusion,url,headBranch,updatedAt,event",
+        ],
+        repo=repo,
+        timeout=timeout,
+    )
+    if why:
+        return [], why
+    rows: list[dict[str, Any]] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        run_id = it.get("databaseId")
+        status = str(it.get("status") or "")
+        conclusion = it.get("conclusion")
+        rows.append(
+            {
+                "repo": repo,
+                "id": run_id,
+                "name": it.get("name"),
+                "title": it.get("displayTitle") or it.get("name"),
+                "url": it.get("url") or f"https://github.com/{repo}/actions/runs/{run_id}",
+                "status": status,
+                "conclusion": conclusion or "",
+                "head": it.get("headBranch") or "",
+                "event": it.get("event") or "",
+                "updated_at": it.get("updatedAt") or "",
+                "kind": "action",
+            }
+        )
     return rows, ""
 
 
@@ -1811,28 +1943,98 @@ BOARD_REPOS: tuple[str, ...] = (
     "Netie-AI/netie-control",
 )
 
+_BOARD_FETCHERS: dict[str, Any] = {
+    "open": _gh_open_issues,
+    "completed": _gh_closed_issues,
+    "prs": _gh_open_prs,
+    "actions": _gh_workflow_runs,
+}
 
-def board(repos: tuple[str, ...] = BOARD_REPOS, *, timeout: float = BOARD_WAIT_S) -> Reading:
-    """Open epics and tickets per repo, straight from gh. Display only.
 
-    GET /v1/board uses BOARD_WAIT_S (4s). Pickup passes PICKUP_BOARD_WAIT_S
-    (1.5s) so a hung gh cannot stall unseated CLAIMS.
+def board(
+    repos: tuple[str, ...] = BOARD_REPOS,
+    *,
+    timeout: float = BOARD_WAIT_S,
+    slices: tuple[str, ...] = BOARD_SLICES,
+) -> Reading:
+    """GitHub Issues / PRs / Actions per repo, straight from gh. Display only.
+
+    GET /v1/board uses BOARD_WAIT_S (4s) and every slice. Pickup passes
+    PICKUP_BOARD_WAIT_S (1.5s) with slices=('open',) so a hung gh cannot
+    stall unseated CLAIMS. Unread stays named; empty lists are honest empty.
     """
-    rows: list[dict[str, Any]] = []
+    wanted = tuple(s for s in slices if s in _BOARD_FETCHERS) or ("open",)
+    jobs: list[tuple[str, str, Any]] = []
+    for repo in repos:
+        for slice_name in wanted:
+            jobs.append((slice_name, repo, partial(_BOARD_FETCHERS[slice_name], repo, timeout=timeout)))
+    buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in wanted}
     unreachable: list[str] = []
-    with ThreadPoolExecutor(max_workers=max(len(repos), 1)) as pool:
-        for repo_rows, why in pool.map(partial(_gh_open_issues, timeout=timeout), repos):
-            rows.extend(repo_rows)
+    workers = max(len(jobs), 1)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = [(slice_name, repo, pool.submit(fn)) for slice_name, repo, fn in jobs]
+        for slice_name, repo, fut in futs:
+            rows, why = fut.result()
+            buckets.setdefault(slice_name, []).extend(rows)
             if why:
-                unreachable.append(why)
+                unreachable.append(f"{slice_name} {why}")
 
-    if unreachable and not rows:
-        return Reading.unreachable("gh issue list", "; ".join(unreachable))
+    open_rows = buckets.get("open") or []
+    completed = buckets.get("completed") or []
+    prs = buckets.get("prs") or []
+    actions = buckets.get("actions") or []
+    any_rows = bool(open_rows or completed or prs or actions)
+    if unreachable and not any_rows:
+        return Reading.unreachable("gh issue/pr/run list", "; ".join(unreachable))
     return Reading(
         ok=True,
-        data={"items": rows, "unreachable": unreachable},
-        detail=("some repos unreachable: " + "; ".join(unreachable)) if unreachable else "",
-        source="gh issue list",
+        data={
+            "items": open_rows,
+            "open": open_rows,
+            "completed": completed,
+            "prs": prs,
+            "actions": actions,
+            "unreachable": unreachable,
+            "poll_s": OPS_POLL_S,
+            "poll": "/v1/ops",
+            "slices": list(wanted),
+        },
+        detail=("some github slices unreachable: " + "; ".join(unreachable)) if unreachable else "",
+        source="gh issue/pr/run list",
+    )
+
+
+def ops_view() -> Reading:
+    """Live shared ops desk: GitHub board + CLAIMS fleet + pickup. Display only.
+
+    One GET for the 15s UI poll. Control does not assign, seat, or run.
+    Pickup reuses this board read so ops does not wait on a second gh.
+    """
+    fleet = fleet_view()
+    board_reading = board()
+    pickup = pickup_from_readings(fleet.to_dict(), board_reading.to_dict())
+    any_ok = bool(fleet.ok or board_reading.ok or pickup.ok)
+    detail_bits = []
+    if not fleet.ok:
+        detail_bits.append(f"fleet: {fleet.detail or 'unread'}")
+    if not board_reading.ok:
+        detail_bits.append(f"board: {board_reading.detail or 'unread'}")
+    return Reading(
+        ok=any_ok,
+        data={
+            "poll_s": OPS_POLL_S,
+            "poll": "/v1/ops",
+            "board": board_reading.to_dict(),
+            "fleet": fleet.to_dict(),
+            "pickup": pickup.to_dict(),
+            "rule": (
+                "Ops poll is display. Claim on GitHub, then CLAIMS.json. "
+                "One writer per unused branch. Control does not assign. "
+                "POST /v1/run stays 405."
+            ),
+        },
+        source="GET /v1/ops",
+        detail="; ".join(detail_bits),
     )
 
 

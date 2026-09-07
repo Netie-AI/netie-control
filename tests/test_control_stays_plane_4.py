@@ -410,9 +410,13 @@ def test_v1_state_is_display_only_and_skips_slow_probes(
     def boom_pads() -> None:
         raise AssertionError("GET /v1/state must not run claude_pads_view")
 
+    def boom_ops() -> None:
+        raise AssertionError("GET /v1/state must not run ops_view")
+
     monkeypatch.setattr(sources, "estate_gate", boom_gate)
     monkeypatch.setattr(sources, "board", boom_board)
     monkeypatch.setattr(sources, "claude_pads_view", boom_pads)
+    monkeypatch.setattr(sources, "ops_view", boom_ops)
     body = client.get("/v1/state").json()
     assert body["display_only"] is True
     assert "claude_pads" in body
@@ -1124,6 +1128,9 @@ def test_fleet_from_claims_seated_first_and_does_not_invent_cloud() -> None:
     }
     fleet = fleet_from_claims(payload, {"Netie-AI/dms#99": "scope the SQL"})
     assert fleet["seated"] == 2
+    assert fleet["running"] == 2
+    assert "cursor/e9-02-sql-scope-68a9" in fleet["occupied_heads"]
+    assert "One writer per unused branch" in fleet["parallel_rule"]
     assert fleet["rows"][0]["role"] == "SEATED"
     dms = next(r for r in fleet["rows"] if r["ticket"] == "Netie-AI/dms#99")
     assert dms["lane"] == "Cursor"
@@ -1406,12 +1413,20 @@ def test_board_tickets_are_open_and_comment_cards(
 
 
 def test_board_defaults_include_control_repo() -> None:
-    from netie_control.sources import BOARD_REPOS, BOARD_WAIT_S, PICKUP_BOARD_WAIT_S
+    from netie_control.sources import (
+        BOARD_REPOS,
+        BOARD_SLICES,
+        BOARD_WAIT_S,
+        OPS_POLL_S,
+        PICKUP_BOARD_WAIT_S,
+    )
 
     assert "Netie-AI/netie-control" in BOARD_REPOS
     assert "Netie-AI/dms" in BOARD_REPOS
     assert BOARD_WAIT_S <= 4.0
     assert PICKUP_BOARD_WAIT_S <= 1.5
+    assert OPS_POLL_S == 15.0
+    assert BOARD_SLICES == ("open", "completed", "prs", "actions")
 
 
 def test_v1_board_fail_closes_hung_gh(
@@ -1485,6 +1500,42 @@ def test_pickup_tray_lists_unseated_and_skips_seated() -> None:
     assert "https://github.com/Netie-AI/dms/issues/40" in hrefs
     assert "https://github.com/Netie-AI/Cortex/issues/6" in hrefs
     assert "https://github.com/Netie-AI/OpenVault/issues/18" not in hrefs
+
+
+def test_pickup_tray_skips_running_claims_seats() -> None:
+    from netie_control.sources import pickup_tray
+
+    tray = pickup_tray(
+        {
+            "rows": [
+                {
+                    "role": "RUNNING",
+                    "ticket": "Netie-AI/netie-control#5",
+                    "href": "https://github.com/Netie-AI/netie-control/issues/5",
+                    "title": "ops desk",
+                }
+            ]
+        },
+        {
+            "items": [
+                {
+                    "repo": "Netie-AI/netie-control",
+                    "number": 5,
+                    "title": "ops desk",
+                    "url": "https://github.com/Netie-AI/netie-control/issues/5",
+                },
+                {
+                    "repo": "Netie-AI/Cortex",
+                    "number": 6,
+                    "title": "SEC-01",
+                    "url": "https://github.com/Netie-AI/Cortex/issues/6",
+                },
+            ]
+        },
+    )
+    hrefs = [x["href"] for x in tray["items"]]
+    assert "https://github.com/Netie-AI/Cortex/issues/6" in hrefs
+    assert "https://github.com/Netie-AI/netie-control/issues/5" not in hrefs
 
 
 def test_v1_pickup_is_display_only_and_does_not_assign(
@@ -1758,7 +1809,9 @@ def test_strip_unread_is_warn_not_quiet_question(client: TestClient) -> None:
     page = client.get("/").text
     assert 'class="strip__cell is-absent"' in page
     assert 'id="stripPickup">unread</b>' in page
+    assert 'id="stripSeated">unread</b>' in page
     assert ">unread</b><span>seated</span>" in page
+    assert 'id="stripHeld">unread</b>' in page
     assert 'id="stripPads">unread</b>' in page
     assert ">unread</b><span>claude pads</span>" in page
     assert ">unread</b><span>this PC live</span>" in page
@@ -1786,6 +1839,8 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["desk"]["usage_probe"] == "/api/usage"
     assert body["desk"]["board_wait_s"] == 4.0
     assert body["desk"]["pickup_board_wait_s"] == 1.5
+    assert body["desk"]["ops_poll_s"] == 15.0
+    assert body["desk"]["ops_poll"] == "/v1/ops"
     assert body["desk"]["kb_wait_s"] == 1.5
     assert body["desk"]["cortex_wait_s"] == 1.5
     assert body["desk"]["crew_belt_wait_s"] == 1.5
@@ -1797,6 +1852,7 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert "/v1/fetch" in body["desk"]["display_gets"]
     assert "/v1/sidecar" in body["desk"]["display_gets"]
     assert "/v1/launchers" in body["desk"]["display_gets"]
+    assert "/v1/ops" in body["desk"]["display_gets"]
     page = client.get("/").text
     assert 'class="howto"' in page
     assert "Every agent" in page
@@ -1807,6 +1863,8 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert "usage_probe=/api/usage" in page
     assert "board_wait_s=4.0" in page
     assert "pickup_board_wait_s=1.5" in page
+    assert "ops_poll=/v1/ops" in page
+    assert "ops_poll_s=15.0" in page
     assert "kb_wait_s=1.5" in page
     assert "cortex_wait_s=1.5" in page
     assert "crew_belt_wait_s=1.5" in page
@@ -2471,7 +2529,7 @@ def test_display_gets_stay_get_and_do_not_run(
     client: TestClient,
 ) -> None:
     """TAS-CONTROL GET surfaces. POST is not a write path. Four 405s unchanged."""
-    for path in ("/v1/plans", "/v1/prompts", "/v1/fetch", "/v1/sidecar", "/v1/launchers"):
+    for path in ("/v1/plans", "/v1/prompts", "/v1/fetch", "/v1/sidecar", "/v1/launchers", "/v1/ops"):
         resp = client.get(path)
         assert resp.status_code == 200, path
         body = resp.json()
@@ -2491,6 +2549,8 @@ def test_display_gets_stay_get_and_do_not_run(
     page = client.get("/").text
     assert "fetch(\"/v1/plans\")" in page
     assert "fetch(\"/v1/prompts\")" in page
+    assert "fetch(\"/v1/ops\")" in page
+    assert "setInterval(tickOps, 15000)" in page
     assert "GET /v1/sidecar" in page
     assert "sidecar :8023" in page.lower()
     assert "3100" not in page
@@ -2916,5 +2976,246 @@ def test_hung_html_root_is_not_json_live() -> None:
         assert status.data == {"up": True}
     finally:
         httpd.shutdown()
+
+
+def _fake_gh_run(argv: list[str], **_k: object) -> object:
+    """Deterministic gh stdout for board slice tests. No network."""
+    class Proc:
+        returncode = 0
+        stderr = ""
+        stdout = "[]"
+
+    argv = [str(x) for x in argv]
+    joined = " ".join(argv)
+    repo = ""
+    if "--repo" in argv:
+        repo = argv[argv.index("--repo") + 1]
+    if "issue" in argv and "--state" in argv and argv[argv.index("--state") + 1] == "open":
+        Proc.stdout = json.dumps(
+            [
+                {
+                    "number": 5,
+                    "title": "live ops desk",
+                    "url": f"https://github.com/{repo}/issues/5",
+                    "labels": [],
+                    "assignees": [{"login": "jian-hong"}],
+                }
+            ]
+        )
+    elif "issue" in argv and "--state" in argv and argv[argv.index("--state") + 1] == "closed":
+        Proc.stdout = json.dumps(
+            [
+                {
+                    "number": 7,
+                    "title": "belt assign",
+                    "url": f"https://github.com/{repo}/issues/7",
+                    "labels": [],
+                    "assignees": [],
+                    "closedAt": "2026-09-04T08:37:56Z",
+                }
+            ]
+        )
+    elif "pr" in argv and "list" in argv:
+        Proc.stdout = json.dumps(
+            [
+                {
+                    "number": 9,
+                    "title": "wakes honesty",
+                    "url": f"https://github.com/{repo}/pull/9",
+                    "headRefName": "cursor/control-desk-harden-72b4",
+                    "isDraft": False,
+                    "updatedAt": "2026-09-06T11:08:11Z",
+                }
+            ]
+        )
+    elif "run" in argv and "list" in argv:
+        Proc.stdout = json.dumps(
+            [
+                {
+                    "databaseId": 34029972734,
+                    "name": "CI",
+                    "displayTitle": "feat(control): wakes honesty",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "url": f"https://github.com/{repo}/actions/runs/34029972734",
+                    "headBranch": "main",
+                    "updatedAt": "2026-09-06T11:21:02Z",
+                    "event": "push",
+                }
+            ]
+        )
+    elif "issue" in joined:
+        Proc.returncode = 1
+        Proc.stderr = "unexpected gh issue argv"
+    return Proc()
+
+
+def test_board_live_slices_are_github_truth_not_invented(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "board", _REAL_BOARD)
+    monkeypatch.setattr(sources.subprocess, "run", _fake_gh_run)
+    reading = sources.board(repos=("Netie-AI/netie-control",), timeout=1.0)
+    assert reading.ok is True
+    data = reading.data or {}
+    assert data["items"][0]["number"] == 5
+    assert data["items"][0]["kind"] == "issue"
+    assert data["open"][0]["assignees"] == ["jian-hong"]
+    assert data["completed"][0]["number"] == 7
+    assert data["completed"][0]["kind"] == "completed"
+    assert data["prs"][0]["head"] == "cursor/control-desk-harden-72b4"
+    assert data["prs"][0]["kind"] == "pr"
+    assert data["actions"][0]["conclusion"] == "success"
+    assert data["actions"][0]["kind"] == "action"
+    assert data["poll"] == "/v1/ops"
+    assert data["poll_s"] == 15.0
+    assert "invent" not in (reading.detail or "").lower()
+
+
+def test_board_open_slice_skips_prs_and_actions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from netie_control import sources
+
+    seen: list[str] = []
+
+    def spy(argv: list[str], **k: object) -> object:
+        seen.append(" ".join(str(x) for x in argv))
+        return _fake_gh_run(argv, **k)
+
+    monkeypatch.setattr(sources, "board", _REAL_BOARD)
+    monkeypatch.setattr(sources.subprocess, "run", spy)
+    reading = sources.board(
+        repos=("Netie-AI/netie-control",),
+        timeout=1.0,
+        slices=("open",),
+    )
+    assert reading.ok is True
+    joined = "\n".join(seen)
+    assert "pr list" not in joined
+    assert "run list" not in joined
+    assert "--state closed" not in joined
+    assert (reading.data or {}).get("prs") == []
+    assert (reading.data or {}).get("actions") == []
+    assert (reading.data or {}).get("items")[0]["number"] == 5
+
+
+def test_v1_ops_is_display_only_poll_and_does_not_assign(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    monkeypatch.setattr(sources, "board", _REAL_BOARD)
+    monkeypatch.setattr(sources.subprocess, "run", _fake_gh_run)
+    monkeypatch.setattr(
+        sources,
+        "fleet_view",
+        lambda: Reading(
+            ok=True,
+            source="CLAIMS.json",
+            data={
+                "seated": 1,
+                "running": 1,
+                "held": 0,
+                "occupied_heads": ["cursor/live-ops-desk-459d"],
+                "parallel_rule": "One writer per unused branch per ticket.",
+                "rows": [
+                    {
+                        "ticket": "Netie-AI/netie-control#5",
+                        "repo": "netie-control",
+                        "head": "cursor/live-ops-desk-459d",
+                        "role": "RUNNING",
+                        "title": "ops desk",
+                        "href": "https://github.com/Netie-AI/netie-control/issues/5",
+                    }
+                ],
+            },
+        ),
+    )
+    body = client.get("/v1/ops").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["poll_s"] == 15.0
+    assert body["poll"] == "/v1/ops"
+    assert body["run_owner"] == "Cortex"
+    assert body["assign_owner"] == "GitHub Issues + CLAIMS.json"
+    data = body["data"] or {}
+    assert data["board"]["ok"] is True
+    assert data["board"]["data"]["prs"][0]["kind"] == "pr"
+    assert data["fleet"]["ok"] is True
+    assert data["fleet"]["data"]["running"] == 1
+    assert data["pickup"]["ok"] is True
+    pickup_hrefs = [x.get("href") for x in (data["pickup"]["data"] or {}).get("items") or []]
+    assert "https://github.com/Netie-AI/netie-control/issues/5" not in pickup_hrefs
+    assert "Control does not assign" in (data.get("rule") or "")
+    assert client.post("/v1/ops", json={"assign": "me"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+    assert client.post("/v1/goal").status_code == 405
+    assert client.post("/v1/route").status_code == 405
+    assert client.post("/v1/secrets").status_code == 405
+    page = client.get("/").text
+    assert "fetch(\"/v1/ops\")" in page
+    assert "setInterval(tickOps, 15000)" in page
+    assert "function tickOps" in page
+    assert "RUNNING / SEATED" in page
+    assert "One writer per unused branch" in page
+    assert "<form" not in page.lower()
+    assert "<iframe" not in page.lower()
+    assert "3100" not in page
+
+
+def test_index_does_not_run_ops_view(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from netie_control import sources
+
+    def boom() -> None:
+        raise AssertionError("GET / must not run ops_view")
+
+    monkeypatch.setattr(sources, "ops_view", boom)
+    page = client.get("/").text
+    assert "fetch(\"/v1/ops\")" in page
+    assert "GET /v1/ops" in page
+    assert client.post("/v1/ops", json={"seat": True}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_v1_ops_unread_is_named_not_green(
+    client: TestClient,
+) -> None:
+    body = client.get("/v1/ops").json()
+    assert body["display_only"] is True
+    assert body["ok"] is False
+    fleet = (body.get("data") or {}).get("fleet") or {}
+    board = (body.get("data") or {}).get("board") or {}
+    assert fleet.get("ok") is False
+    assert board.get("ok") is False
+    assert "test: no live fleet" in (fleet.get("detail") or "")
+    assert client.post("/v1/run").status_code == 405
+
+
+def test_fleet_from_claims_running_role_is_occupied() -> None:
+    from netie_control.sources import fleet_from_claims
+
+    fleet = fleet_from_claims(
+        {
+            "tickets": [
+                {
+                    "ticket": "Netie-AI/netie-control#5",
+                    "repo": "Netie-AI/netie-control",
+                    "head": "cursor/live-ops-desk-459d",
+                    "role": "RUNNING",
+                    "may_write": True,
+                }
+            ]
+        }
+    )
+    assert fleet["seated"] == 0
+    assert fleet["running"] == 1
+    assert fleet["occupied_heads"] == ["cursor/live-ops-desk-459d"]
+    assert fleet["rows"][0]["role"] == "RUNNING"
+    assert "does not assign" in fleet["parallel_rule"]
 
 

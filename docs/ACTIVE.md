@@ -2,7 +2,7 @@
 
 | Path | What |
 |---|---|
-| `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/gate` `GET /v1/board` `GET /v1/pads` `GET /v1/sidecar` `GET /v1/plans` `GET /v1/prompts` `GET /v1/fetch` `GET /v1/launchers` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
+| `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/gate` `GET /v1/board` `GET /v1/ops` (15s poll: board+fleet+pickup) `GET /v1/pads` `GET /v1/sidecar` `GET /v1/plans` `GET /v1/prompts` `GET /v1/fetch` `GET /v1/launchers` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
 | `AGENTS.md` | Seating contract for Cursor, Claude Code, Grok Bot. Same clause as CLAUDE.md operator desk |
 | `netie_control/sources.py` | Read-only readers. Every one returns real data or an explicit unreachable marker. Writes nothing |
 | `netie_control/render.py` | The operator page. Numbered pickup / coordinate / crew steps. An unreachable source renders its reason, never an empty panel. Live hops use `readingJson` so HTTP 404 cannot paint as a quiet reading |
@@ -24,11 +24,11 @@
 | Launchers | Control `GET /v1/launchers` lists name, cwd, argv. P-CTL-2 does not execute | declared. Click does nothing |
 | Skill chest | `GET {NETIE_KB_URL}/healthz` (default `:8030`, KB_WAIT_S 1.5s). Search and in-panel item show use the same cap. Hits stay on the desk | urllib, loopback only. Counts, not a runner |
 | Estate gate | `D:\Netie\Internal\Agents\estate_gate.py` (also `E:\Netie` / `NETIE_ROOT`) | subprocess, live, never cached. Desk paints first; live verdict is `GET /v1/gate` |
-| Claims board | `D:\Netie\Internal\Agents\CLAIMS.json` plus `snapshots/latest.json` titles | file read. Displayed as who/where/what via `GET /v1/fleet` |
+| Claims board | `D:\Netie\Internal\Agents\CLAIMS.json` plus `snapshots/latest.json` titles | file read. `GET /v1/fleet` who/where/what. RUNNING/SEATED heads are occupied. One writer per unused branch. Display only |
 | Runtime view | `D:\Netie\Internal\Agents\RUNTIME.md` | file read, parsed; stale named |
 | Claude pads | `claude agents --json` | subprocess, list only, timeout 4s. GET / and coordinate poll defer this. Live list is `GET /v1/pads`. Hung CLI named unread. Does not start Claude |
 | Desktop surfaces | process snapshot for Cursor / Claude / Grok Bot | present/absent only. Never start or kill |
-| Epic/ticket board | GitHub | `gh issue list` (dms, Cortex, OpenVault, netie-control in parallel). Desk paints first; live list is `GET /v1/board` (BOARD_WAIT_S 4s, hung gh named unread). Pickup may overlay board for 1.5s and must not wait on hung gh |
+| Epic/ticket board | GitHub | `gh issue/pr/run list` (dms, Cortex, OpenVault, netie-control in parallel). Open issues, completed, PRs, Actions. Desk paints first; live list is `GET /v1/board` (BOARD_WAIT_S 4s). Pickup overlay is open-issues only (1.5s). `GET /v1/ops` polls board+CLAIMS fleet+pickup every 15s. Hung gh named unread. Control does not assign |
 
 ## Does not exist yet
 
@@ -37,8 +37,7 @@ on the page), launcher execution (P-CTL-2), Crew converse
 *inside* Control (P-CTL-3; charter still display-and-launch; belt JSON is shipped).
 Disk GET / puts Cortex + OpenVault in `#hero` (not collapsed details).
 Disk contract `before_seating` lists pickup, fleet, you, coordinate.
-Disk coordinate includes `crew-bind` (`live` false); talk wakes from
-`/crew/wakes`; sidecar lane is `:8023`. `GET /v1/board` is 4s fail-closed.
-Issue #5 stays OPEN. Control does not spawn
-PRD/Epic/Ticket agents and does not hand out vault credentials - those stay
-Cortex Crew and OpenVault. See `PARKING_LOT.md`.
+`GET /v1/ops` 15s poll is the shared live board (issues/PRs/Actions + CLAIMS
+RUNNING seats). Issue #5 stays OPEN (P-CTL-2 launchers still unwired).
+Control does not spawn PRD/Epic/Ticket agents and does not hand out vault
+credentials - those stay Cortex Crew and OpenVault. See `PARKING_LOT.md`.

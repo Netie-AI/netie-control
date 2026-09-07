@@ -1,6 +1,6 @@
 # STATUS.md - Netie Control
 
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-07
 **Remote:** public https://github.com/Netie-AI/netie-control
 **Plane:** 4 - operator shell
 
@@ -27,9 +27,9 @@ python -m pytest E:\NetieControl\tests -q
 | Pickup tray | Unseated CLAIMS first. Board overlay 1.5s. Live issues stay `GET /v1/board`. Display only |
 | Coordinate map | Numbered invoke lanes. `crew-bind` never green. Talk wakes from `/crew/wakes` (HTML GET `/` is not enough). Sidecar lane is `:8023`. Poll refreshes talk/sidecar strip. No spawn |
 | Agent contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/coordinate`. Desk names crew_belt, sidecar, and openvault waits. No assign POST |
-| Display GETs | `GET /v1/plans` `/v1/prompts` `/v1/fetch` `/v1/sidecar` `/v1/launchers`. GET only. P-CTL-2 does not execute. |
+| Display GETs | `GET /v1/plans` `/v1/prompts` `/v1/fetch` `/v1/sidecar` `/v1/launchers` `GET /v1/ops` (15s board+fleet+pickup poll). GET only. P-CTL-2 does not execute. |
 | Estate gate | Desk paints first (`GET /v1/gate not yet`, not checking). Live verdict is `GET /v1/gate`. Banner stays UNKNOWN until then |
-| Gh board | Desk paints first. Live issues are `GET /v1/board` (4s). Hung gh named unread. Pickup overlay 1.5s. Favicon 204 |
+| Gh board | Desk paints first. Live issues/PRs/Actions are `GET /v1/board` (4s). `GET /v1/ops` polls every 15s. Hung gh named unread. Pickup overlay 1.5s open-only. Favicon 204 |
 | Cortex governance | Displays `activity.governance` window (refusals, bound session ids). No ledger scrape |
 | Spaceship host | Display `SHIP_SPACESHIP.md`. Reopen Hosting Manager. No passwords. Do not buy New hosting |
 
@@ -38,7 +38,7 @@ python -m pytest E:\NetieControl\tests -q
 | ID | Work |
 |----|------|
 | **NEEDS-YOU** | Lift `dms#61` in `FLEET.md`. The PR is MERGED. Gate still HOLD_MISSING |
-| **NEEDS-YOU** | Bind live `:8020` to `python -m CortexOS.crew` from `E:\Cortex`. Agents must not start or kill that process (R-0015). Issue #5 stays OPEN. |
+| **NEEDS-YOU** | Bind live `:8020` to `python -m CortexOS.crew` from `E:\Cortex`. Agents must not start or kill that process (R-0015). Issue #5 stays OPEN (P-CTL-2 launchers). Live ops poll shipped. |
 | **NEEDS-YOU** | Point **work.netie.ai** at this box (tunnel / Access), then `/healthz` |
 | **NEEDS-YOU** | Answer **F36** (extract vs live federation) and **F45** (insights epic). Both park finished, green dms branches. YOU steps 2 and 3 link them |
 | Not built | Launchers unwired (P-CTL-2: desk names cwd, does not execute) |
