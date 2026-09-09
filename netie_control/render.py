@@ -42,7 +42,7 @@ def _panel(title: str, reading: dict[str, Any], body_fn, extra: str = "", panel_
     cls = "panel" + (f" {extra}" if extra else "")
     id_attr = f' id="{html.escape(panel_id)}"' if panel_id else ""
     badge = f' <span class="count">{_esc(count)}</span>' if count else ""
-    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads", "plans", "prompts", "fetch"} else ""
+    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "fleet", "pads", "plans", "prompts", "fetch"} else ""
     wrap_open = f'<div id="{html.escape(wrap_id)}">' if wrap_id else ""
     wrap_close = "</div>" if wrap_id else ""
     if not reading.get("ok"):
@@ -117,21 +117,46 @@ def _data_attrs(ticket: Any, title: Any, href: Any) -> str:
 
 def _ticket_card(r: dict[str, Any]) -> str:
     tags = ""
-    if r.get("is_epic"):
-        tags += '<span class="tag epic">epic</span> '
-    if r.get("blocked"):
-        tags += '<span class="tag blocked">blocked</span>'
+    kind = str(r.get("kind") or "issue")
+    if kind == "pr":
+        tags += '<span class="tag pr">pr</span> '
+        if r.get("draft"):
+            tags += '<span class="tag">draft</span> '
+        if r.get("head"):
+            tags += f'<span class="tag">{_esc(r.get("head"))}</span> '
+    elif kind == "action":
+        tags += '<span class="tag action">actions</span> '
+        status = str(r.get("status") or "")
+        conclusion = str(r.get("conclusion") or "")
+        if status == "in_progress":
+            tags += '<span class="tag running">in_progress</span> '
+        elif conclusion == "failure":
+            tags += '<span class="tag blocked">failure</span> '
+        elif conclusion:
+            tags += f'<span class="tag">{_esc(conclusion)}</span> '
+        elif status:
+            tags += f'<span class="tag">{_esc(status)}</span> '
+    else:
+        if kind == "completed":
+            tags += '<span class="tag">completed</span> '
+        if r.get("is_epic"):
+            tags += '<span class="tag epic">epic</span> '
+        if r.get("blocked"):
+            tags += '<span class="tag blocked">blocked</span>'
+        for login in (r.get("assignees") or [])[:3]:
+            tags += f'<span class="tag">{_esc(login)}</span> '
     href = str(r.get("url") or "")
     repo = str(r.get("repo", "")).split("/")[-1]
-    num = r.get("number")
+    num = r.get("number") or r.get("id")
     ticket = f"{repo}#{num}"
     title = r.get("title")
     btns = ""
     if href:
         safe = _esc(href)
+        primary = "Open"
         btns = (
             f'<span class="work-row__act">'
-            f'<a class="btn" href="{safe}" target="_blank" rel="noopener">Open</a> '
+            f'<a class="btn" href="{safe}" target="_blank" rel="noopener">{primary}</a> '
             f'<a class="btn btn-ghost" href="{safe}" target="_blank" rel="noopener">Comment</a>'
             f"</span>"
         )
@@ -143,25 +168,35 @@ def _ticket_card(r: dict[str, Any]) -> str:
     )
 
 
+def _slice_col(title: str, rows: list[dict[str, Any]], empty: str) -> str:
+    cards = "".join(_ticket_card(x) for x in rows[:24]) or f'<p class="absent">{_esc(empty)}</p>'
+    return (
+        f'<section class="kcol"><h3>{_esc(title)} {len(rows)}</h3>{cards}</section>'
+    )
+
+
 def _board_body(d: dict[str, Any]) -> str:
-    rows = [r for r in (d.get("items") or []) if isinstance(r, dict)]
+    open_rows = [r for r in (d.get("items") or d.get("open") or []) if isinstance(r, dict)]
+    completed = [r for r in (d.get("completed") or []) if isinstance(r, dict)]
+    prs = [r for r in (d.get("prs") or []) if isinstance(r, dict)]
+    actions = [r for r in (d.get("actions") or []) if isinstance(r, dict)]
+    poll_s = d.get("poll_s") or ""
     bits: list[str] = [
-        "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign.</p>"
+        (
+            "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign. "
+            "PRs show occupied heads. Actions status is GitHub's, never invented green.</p>"
+        ),
+        (
+            f'<p class="absent">Live poll GET /v1/ops every {_esc(poll_s or "15")}s. '
+            "Manual Refresh is not the only path.</p>"
+        ),
+        '<div class="kanban board-slices">',
+        _slice_col("Open issues", open_rows, "No open items returned."),
+        _slice_col("Completed", completed, "No completed issues returned."),
+        _slice_col("Open PRs", prs, "No open PRs returned."),
+        _slice_col("Actions", actions, "No Actions runs returned."),
+        "</div>",
     ]
-    if not rows:
-        bits.append('<p class="absent">No open items returned.</p>')
-    else:
-        by_repo: dict[str, list[dict[str, Any]]] = {}
-        for r in rows[:80]:
-            by_repo.setdefault(str(r.get("repo") or "?"), []).append(r)
-        cols = []
-        for repo, items in by_repo.items():
-            cards = "".join(_ticket_card(x) for x in items[:24])
-            cols.append(
-                f'<section class="kcol"><h3>{_esc(repo.split("/")[-1])} {len(items)}</h3>'
-                f"{cards}</section>"
-            )
-        bits.append('<div class="kanban">' + "".join(cols) + "</div>")
     if d.get("unreachable"):
         bits.append(
             '<p class="absent">Not shown, unreachable: '
@@ -716,7 +751,7 @@ def _crew_belt_body(d: Any) -> str:
 def _seat_card(row: dict[str, Any]) -> str:
     role = str(row.get("role") or "?")
     lane = str(row.get("lane") or "unknown")
-    role_cls = "seated" if role == "SEATED" else ""
+    role_cls = "seated" if role in {"SEATED", "RUNNING"} else ""
     lane_cls = "cursor" if lane == "Cursor" else ("claude" if lane == "Claude" else "")
     what = row.get("title") or row.get("ticket") or ""
     href = str(row.get("href") or "")
@@ -725,7 +760,7 @@ def _seat_card(row: dict[str, Any]) -> str:
         f'<div class="meta">{_esc(row.get("repo"))} · {_esc(what)}</div>'
         f"<div><code>{_esc(row.get('head'))}</code></div>"
         '<div class="tags">'
-        f'<span class="tag {role_cls}">{_esc(role)}</span>'
+        f'<span class="tag {role_cls}">{_esc("RUNNING" if role in {"SEATED", "RUNNING"} else role)}</span>'
         f'<span class="tag {lane_cls}">lane guess {_esc(lane)}</span>'
         "</div>"
     )
@@ -746,8 +781,10 @@ def _fleet_body(d: Any) -> str:
     rows = [r for r in (d.get("rows") or []) if isinstance(r, dict)]
     bits: list[str] = [
         (f"<p>Who is seated. CLAIMS seated={_esc(d.get('seated', 0))} "
+        f"running={_esc(d.get('running', d.get('seated', 0)))} "
         f"held={_esc(d.get('held', 0))}. GitHub is SoT. Control does not seat anyone.</p>"),
         f'<p class="absent">{_esc(d.get("lane_rule") or "Lane tags are a guess. cursor/* is not proof of cloud vs this PC.")}</p>',
+        f'<p class="absent">{_esc(d.get("parallel_rule") or "One writer per unused branch. Control does not assign.")}</p>',
         (
             '<p class="absent">Talk live is Crew GET /crew/wakes. Hung :8020 HTML / is not a seat. '
             "Sidecar is :8023. crew-bind never greens from this board.</p>"
@@ -756,9 +793,9 @@ def _fleet_body(d: Any) -> str:
     if not rows:
         bits.append('<p class="absent">Claims board carries no ticket rows.</p>')
         return "".join(bits)
-    seated = [r for r in rows if r.get("role") == "SEATED"]
+    running = [r for r in rows if r.get("role") in {"SEATED", "RUNNING"}]
     unseated = [r for r in rows if r.get("role") == "UNSEATED"]
-    other = [r for r in rows if r.get("role") not in {"SEATED", "UNSEATED"}]
+    other = [r for r in rows if r.get("role") not in {"SEATED", "RUNNING", "UNSEATED"}]
 
     def col(title: str, items: list[dict[str, Any]]) -> str:
         cards = "".join(_seat_card(r) for r in items[:24]) or '<p class="absent">None.</p>'
@@ -766,7 +803,7 @@ def _fleet_body(d: Any) -> str:
 
     bits.append(
         '<div class="kanban">'
-        + col("SEATED", seated)
+        + col("RUNNING / SEATED", running)
         + col("UNSEATED", unseated)
         + col("held / other", other)
         + "</div>"
@@ -1133,8 +1170,8 @@ def _strip(state: dict[str, Any]) -> str:
     return (
         '<div class="strip" id="strip">'
         + _strip_cell("#pickup", bool(pickup.get("ok")), pick_n, "pickup", cell_id="stripPickup")
-        + _strip_cell("#fleet", bool(fleet.get("ok")), seated, "seated")
-        + _strip_cell("#fleet", bool(fleet.get("ok")), held, "held")
+        + _strip_cell("#fleet", bool(fleet.get("ok")), seated, "seated", cell_id="stripSeated")
+        + _strip_cell("#fleet", bool(fleet.get("ok")), held, "held", cell_id="stripHeld")
         + _strip_cell("#pads", pad_ok, pad_n, "claude pads", cell_id="stripPads")
         + _strip_cell("#pc", surf_ok, live_n, "this PC live")
         + _strip_cell("#coordinate", bool(coord.get("ok")), coord_n, "invoke live")
@@ -1159,7 +1196,7 @@ def _rail_agents(state: dict[str, Any]) -> str:
     rows = [
         r
         for r in ((fleet.get("data") or {}).get("rows") or [])
-        if isinstance(r, dict) and r.get("role") == "SEATED"
+        if isinstance(r, dict) and r.get("role") in {"SEATED", "RUNNING"}
     ]
     if not rows:
         return '<p class="absent">No seated writers.</p>'
@@ -1200,6 +1237,8 @@ def _howto(contract: dict[str, Any]) -> str:
     usage = desk.get("usage_probe") or "/api/usage"
     board_wait = desk.get("board_wait_s")
     pickup_wait = desk.get("pickup_board_wait_s")
+    ops_poll = desk.get("ops_poll") or "/v1/ops"
+    ops_poll_s = desk.get("ops_poll_s")
     kb_wait = desk.get("kb_wait_s")
     cortex_wait = desk.get("cortex_wait_s")
     crew_wait = desk.get("crew_belt_wait_s")
@@ -1215,6 +1254,7 @@ def _howto(contract: dict[str, Any]) -> str:
         "<span>then claim on GitHub. YOU step 8 binds :8020. "
         f"talk_probe={_esc(talk)} you_steps={_esc(steps)} usage_probe={_esc(usage)} "
         f"board_wait_s={_esc(board_wait)} pickup_board_wait_s={_esc(pickup_wait)} "
+        f"ops_poll={_esc(ops_poll)} ops_poll_s={_esc(ops_poll_s)} "
         f"kb_wait_s={_esc(kb_wait)} cortex_wait_s={_esc(cortex_wait)} "
         f"crew_belt_wait_s={_esc(crew_wait)} openvault_usage_wait_s={_esc(vault_wait)} "
         f"sidecar_wait_s={_esc(sidecar_wait)} sidecar_probe={_esc(sidecar_probe)}. "
@@ -1352,10 +1392,10 @@ Control <code>GET /v1/sidecar</code> is sidecar :8023 health.
 <code>GET /v1/plans</code> <code>/v1/prompts</code> <code>/v1/fetch</code> stay GET.
 <code>GET /v1/launchers</code> lists cwd and argv. P-CTL-2 does not execute.
 Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> is unseated work. Control does not assign.
+<code>GET /v1/ops</code> polls board + fleet + pickup every 15s. Display only.
 Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.</footer>
 </main>
 <aside class="inspector">
-{_panel("Coordinate - invoke owners", state.get("coordinate") or {{}}, _coordinate_body, "", "coordinate", _stat(state.get("coordinate") or {{}}, "live"))}
 <div class="panel" id="focus"><h2>Selected ticket</h2>
 <p id="focusEmpty">Click a pickup, board, fleet, or rail row. Control does not assign.</p>
 <div id="focusBody" hidden>
@@ -1369,6 +1409,7 @@ Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this she
 <p class="absent">Ticket Runner seats on GitHub + CLAIMS.json. Control does not spawn. POST /v1/run stays 405. Cortex#51 is kind=task, one writer per branch.</p>
 </div>
 </div>
+{_panel("Coordinate - invoke owners", state.get("coordinate") or {{}}, _coordinate_body, "", "coordinate", _stat(state.get("coordinate") or {{}}, "live"))}
 {_panel("YOU - founder actions", state.get("you") or {{}}, _you_body, "", "you")}
 <div class="panel" id="feedback"><h2>If this feels wrong</h2>
 <p>Comment on that GitHub issue. GitHub is the bus (W-0005). This page does not auto-route chat to an agent.</p>
@@ -1555,42 +1596,63 @@ the founder's desktop software (R-0015).</p></div>
       + '</a> <a class="btn btn-ghost" href="' + esc(href)
       + '" target="_blank" rel="noopener">Comment</a></span>';
   }}
+  function ticketCardHtml(r) {{
+    var kind = r.kind || "issue";
+    var href = r.url || "";
+    var short = String(r.repo || "").split("/").pop();
+    var ticket = short + "#" + (r.number || r.id || "");
+    var tags = "";
+    if (kind === "pr") {{
+      tags += '<span class="tag pr">pr</span> ';
+      if (r.draft) tags += '<span class="tag">draft</span> ';
+      if (r.head) tags += '<span class="tag">' + esc(r.head) + "</span> ";
+    }} else if (kind === "action") {{
+      tags += '<span class="tag action">actions</span> ';
+      if (r.status === "in_progress") tags += '<span class="tag running">in_progress</span> ';
+      else if (r.conclusion === "failure") tags += '<span class="tag blocked">failure</span> ';
+      else if (r.conclusion) tags += '<span class="tag">' + esc(r.conclusion) + "</span> ";
+      else if (r.status) tags += '<span class="tag">' + esc(r.status) + "</span> ";
+    }} else {{
+      if (kind === "completed") tags += '<span class="tag">completed</span> ';
+      if (r.is_epic) tags += '<span class="tag epic">epic</span> ';
+      if (r.blocked) tags += '<span class="tag blocked">blocked</span>';
+      (r.assignees || []).slice(0, 3).forEach(function (login) {{
+        tags += '<span class="tag">' + esc(login) + "</span> ";
+      }});
+    }}
+    return '<div class="work-row ticket-card" data-ticket="' + esc(ticket)
+      + '" data-title="' + esc(r.title) + '" data-href="' + esc(href) + '"><code>'
+      + esc(ticket) + '</code><span class="work-row__title">' + esc(r.title)
+      + '</span><span class="tags">' + tags + "</span>" + actBtns(href, "Open") + "</div>";
+  }}
   function boardHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
-    var rows = (d.items || []).slice(0, 80);
-    var byRepo = {{}};
-    rows.forEach(function (r) {{
-      var repo = String(r.repo || "?");
-      if (!byRepo[repo]) byRepo[repo] = [];
-      byRepo[repo].push(r);
-    }});
-    var cols = Object.keys(byRepo).map(function (repo) {{
-      var items = byRepo[repo];
-      var cards = items.slice(0, 24).map(function (r) {{
-        var href = r.url || "";
-        var short = String(r.repo || "").split("/").pop();
-        var ticket = short + "#" + r.number;
-        var tags = "";
-        if (r.is_epic) tags += '<span class="tag epic">epic</span> ';
-        if (r.blocked) tags += '<span class="tag blocked">blocked</span>';
-        return '<div class="work-row ticket-card" data-ticket="' + esc(ticket)
-          + '" data-title="' + esc(r.title) + '" data-href="' + esc(href) + '"><code>'
-          + esc(ticket) + '</code><span class="work-row__title">' + esc(r.title)
-          + '</span><span class="tags">' + tags + "</span>" + actBtns(href, "Open") + "</div>";
-      }}).join("");
-      return '<section class="kcol"><h3>' + esc(String(repo).split("/").pop()) + " " + items.length
-        + "</h3>" + cards + "</section>";
-    }}).join("");
+    var openRows = (d.items || d.open || []).slice(0, 80);
+    var completed = d.completed || [];
+    var prs = d.prs || [];
+    var actions = d.actions || [];
     var extra = "";
     if (d.unreachable && d.unreachable.length) {{
       extra = '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
     }}
-    var list = rows.length
-      ? '<div class="kanban">' + cols + "</div>"
-      : '<p class="absent">No open items returned.</p>';
-    return "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign.</p>"
-      + list + extra;
+    var poll = d.poll_s || 15;
+    function sliceCol(title, rows, empty) {{
+      rows = rows || [];
+      var cards = rows.slice(0, 24).map(ticketCardHtml).join("")
+        || ('<p class="absent">' + esc(empty) + "</p>");
+      return '<section class="kcol"><h3>' + esc(title) + " " + rows.length + "</h3>" + cards + "</section>";
+    }}
+    return "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign. "
+      + "PRs show occupied heads. Actions status is GitHub's, never invented green.</p>"
+      + '<p class="absent">Live poll GET /v1/ops every ' + esc(poll)
+      + "s. Manual Refresh is not the only path.</p>"
+      + '<div class="kanban board-slices">'
+      + sliceCol("Open issues", openRows, "No open items returned.")
+      + sliceCol("Completed", completed, "No completed issues returned.")
+      + sliceCol("Open PRs", prs, "No open PRs returned.")
+      + sliceCol("Actions", actions, "No Actions runs returned.")
+      + "</div>" + extra;
   }}
   function pickupHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
@@ -1622,6 +1684,83 @@ the founder's desktop software (R-0015).</p></div>
         + '</span><span class="tags">' + tags + "</span>" + actBtns(href, "Pick up") + "</div>";
     }}).join("");
     return head + '<div class="work-list">' + rows + "</div>";
+  }}
+  function seatCardHtml(row) {{
+    var role = row.role || "?";
+    var lane = row.lane || "unknown";
+    var roleCls = (role === "SEATED" || role === "RUNNING") ? "seated" : "";
+    var laneCls = lane === "Cursor" ? "cursor" : (lane === "Claude" ? "claude" : "");
+    var what = row.title || row.ticket || "";
+    var href = row.href || "";
+    var shown = (role === "SEATED" || role === "RUNNING") ? "RUNNING" : role;
+    var inner = "<strong>" + esc(row.ticket) + "</strong>"
+      + '<div class="meta">' + esc(row.repo) + " · " + esc(what) + "</div>"
+      + "<div><code>" + esc(row.head) + "</code></div>"
+      + '<div class="tags"><span class="tag ' + roleCls + '">' + esc(shown) + "</span>"
+      + '<span class="tag ' + laneCls + '">lane guess ' + esc(lane) + "</span></div>";
+    if (href) {{
+      return '<a class="seat-card" href="' + esc(href) + '" target="_blank" rel="noopener"'
+        + ' data-ticket="' + esc(row.ticket) + '" data-title="' + esc(what)
+        + '" data-href="' + esc(href) + '">' + inner + "</a>";
+    }}
+    return '<article class="seat-card" data-ticket="' + esc(row.ticket)
+      + '" data-title="' + esc(what) + '" data-href="' + esc(href) + '">'
+      + inner + "</article>";
+  }}
+  function fleetHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var rows = d.rows || [];
+    var head = "<p>Who is seated. CLAIMS seated=" + esc(d.seated || 0)
+      + " running=" + esc(d.running != null ? d.running : (d.seated || 0))
+      + " held=" + esc(d.held || 0)
+      + ". GitHub is SoT. Control does not seat anyone.</p>"
+      + '<p class="absent">' + esc(d.lane_rule || "Lane tags are a guess.") + "</p>"
+      + '<p class="absent">' + esc(d.parallel_rule || "One writer per unused branch. Control does not assign.") + "</p>"
+      + '<p class="absent">Talk live is Crew GET /crew/wakes. Hung :8020 HTML / is not a seat. '
+      + "Sidecar is :8023. crew-bind never greens from this board.</p>";
+    if (!rows.length) {{
+      return head + '<p class="absent">Claims board carries no ticket rows.</p>';
+    }}
+    var running = rows.filter(function (r) {{ return r.role === "SEATED" || r.role === "RUNNING"; }});
+    var unseated = rows.filter(function (r) {{ return r.role === "UNSEATED"; }});
+    var other = rows.filter(function (r) {{
+      return r.role !== "SEATED" && r.role !== "RUNNING" && r.role !== "UNSEATED";
+    }});
+    function col(title, items) {{
+      var cards = items.slice(0, 24).map(seatCardHtml).join("") || '<p class="absent">None.</p>';
+      return '<section class="kcol"><h3>' + esc(title) + " " + items.length + "</h3>" + cards + "</section>";
+    }}
+    return head + '<div class="kanban">' + col("RUNNING / SEATED", running)
+      + col("UNSEATED", unseated) + col("held / other", other) + "</div>";
+  }}
+  function paintBoard(b) {{
+    var body = document.getElementById("boardBody");
+    if (body) body.innerHTML = boardHtml(b);
+    var n = (b.ok && b.data && b.data.items) ? b.data.items.length : "unread";
+    setCount("board", n);
+  }}
+  function paintPickup(b) {{
+    var body = document.getElementById("pickupBody");
+    if (body) body.innerHTML = pickupHtml(b);
+    var n = (b.ok && b.data && typeof b.data.count === "number") ? b.data.count
+      : ((b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
+    setCount("pickup", n);
+  }}
+  function paintFleet(b) {{
+    var body = document.getElementById("fleetBody");
+    if (body) body.innerHTML = fleetHtml(b);
+    var n = (b.ok && b.data && b.data.rows) ? b.data.rows.length : "unread";
+    setCount("fleet", n);
+    var seated = document.getElementById("stripSeated");
+    var held = document.getElementById("stripHeld");
+    if (seated) seated.textContent = (b.ok && b.data && b.data.seated != null) ? String(b.data.seated) : "unread";
+    if (held) held.textContent = (b.ok && b.data && b.data.held != null) ? String(b.data.held) : "unread";
+    var cell = seated && seated.closest(".strip__cell");
+    if (cell) {{
+      if (b.ok) cell.classList.remove("is-absent");
+      else cell.classList.add("is-absent");
+    }}
   }}
   fetch("/v1/gate").then(readingJson).then(function (g) {{
     var banner = document.getElementById("gateBanner");
@@ -1656,24 +1795,11 @@ the founder's desktop software (R-0015).</p></div>
     if (pill) {{ pill.className = "pill warn"; pill.textContent = "gate unread"; }}
     if (body) body.innerHTML = '<p class="absent">Gate unread. GET /v1/gate.</p>';
   }});
-  fetch("/v1/board").then(readingJson).then(function (b) {{
-    var body = document.getElementById("boardBody");
-    if (!body) return;
-    body.innerHTML = boardHtml(b);
-    var n = (b.ok && b.data && b.data.items) ? b.data.items.length : "unread";
-    setCount("board", n);
-  }}).catch(function () {{
+  fetch("/v1/board").then(readingJson).then(paintBoard).catch(function () {{
     var body = document.getElementById("boardBody");
     if (body) body.innerHTML = '<p class="absent">Board unread. GET /v1/board.</p>';
   }});
-  fetch("/v1/pickup").then(readingJson).then(function (b) {{
-    var body = document.getElementById("pickupBody");
-    if (!body) return;
-    body.innerHTML = pickupHtml(b);
-    var n = (b.ok && b.data && typeof b.data.count === "number") ? b.data.count
-      : ((b.ok && b.data && b.data.items) ? b.data.items.length : "unread");
-    setCount("pickup", n);
-  }}).catch(function () {{
+  fetch("/v1/pickup").then(readingJson).then(paintPickup).catch(function () {{
     var body = document.getElementById("pickupBody");
     if (body) body.innerHTML = '<p class="absent">Pickup unread. GET /v1/pickup.</p>';
   }});
@@ -1849,8 +1975,31 @@ the founder's desktop software (R-0015).</p></div>
       }}
     }}).catch(function () {{ coordUnread(); }});
   }}
+  function tickOps() {{
+    fetch("/v1/ops").then(readingJson).then(function (b) {{
+      var d = (b && b.data) ? b.data : null;
+      if (!d) {{
+        var liveDot = document.getElementById("liveDot");
+        if (liveDot) {{
+          liveDot.className = "live is-unread";
+          liveDot.textContent = "ops unread";
+        }}
+        return;
+      }}
+      if (d.board) paintBoard(d.board);
+      if (d.pickup) paintPickup(d.pickup);
+      if (d.fleet) paintFleet(d.fleet);
+    }}).catch(function () {{
+      var liveDot = document.getElementById("liveDot");
+      if (liveDot) {{
+        liveDot.className = "live is-unread";
+        liveDot.textContent = "ops unread";
+      }}
+    }});
+  }}
   tickCoordinate();
   setInterval(tickCoordinate, 15000);
+  setInterval(tickOps, 15000);
 }})();
 </script>
 </body></html>"""

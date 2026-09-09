@@ -35,7 +35,8 @@ then `GET /v1/pickup`, `GET /v1/fleet`, `GET /v1/you`, and `GET /v1/coordinate`.
 `GET /v1/coordinate` is the Grok-class invoke map (who to talk to, who runs,
 which desktop app is present).
 Pickup is the tray of unseated GitHub work. That is the operator view of who holds
-what. It is **not** a third orchestrator: Control still answers 405 on `/v1/run`
+what. Live shared board is `GET /v1/ops` (15s poll: issues, PRs, Actions, CLAIMS
+RUNNING seats). It is **not** a third orchestrator: Control still answers 405 on `/v1/run`
 `/v1/goal` `/v1/route` `/v1/secrets`. GitHub Issues remain SoT. Converse lives on
 Crew `:8020`. HT1 and HT2 stay HUMAN_STOP - do not invent host URLs or prices.
 

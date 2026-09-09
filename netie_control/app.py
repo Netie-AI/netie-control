@@ -222,12 +222,31 @@ def v1_gate() -> dict[str, Any]:
 
 @router.get("/v1/board")
 def v1_board() -> dict[str, Any]:
-    """Open GitHub issues. Display only. Hung gh is named unread, not a 60s wait."""
+    """GitHub Issues / PRs / Actions. Display only. Hung gh is named unread, not a 60s wait."""
     reading = sources.board()
     return {
         "ok": reading.ok,
         "display_only": True,
         "assign_owner": "GitHub Issues + CLAIMS.json",
+        "poll_s": sources.OPS_POLL_S,
+        "poll": "/v1/ops",
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/ops")
+def v1_ops() -> dict[str, Any]:
+    """Live ops poll: board + CLAIMS fleet + pickup. Display only. Does not assign."""
+    reading = sources.ops_view()
+    return {
+        "ok": bool(reading.ok),
+        "display_only": True,
+        "assign_owner": "GitHub Issues + CLAIMS.json",
+        "run_owner": "Cortex",
+        "poll_s": sources.OPS_POLL_S,
+        "poll": "/v1/ops",
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,

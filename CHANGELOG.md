@@ -1,3 +1,11 @@
+## 2026-09-07 - Live ops poll: GitHub board + CLAIMS RUNNING seats
+
+`GET /v1/board` now lists open issues, completed issues, open PRs, and
+Actions runs from gh. `GET /v1/ops` is the 15s UI poll (board + fleet +
+pickup). RUNNING/SEATED CLAIMS heads are occupied. One writer per unused
+branch. Control still does not assign. POST /v1/run stays 405. Issue #5
+stays open (P-CTL-2 launchers unwired).
+
 ## 2026-09-06 - Desk harden: wakes, sidecar, crew-bind
 
 Talk live stays Crew GET `/crew/wakes`. Wake rows (kind/state/note) paint
