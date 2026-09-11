@@ -1248,8 +1248,10 @@ else:
 
 def _win_running_images(wanted: set[str]) -> set[str]:
     """Lowercase exe names from wanted that are running. Never starts them."""
-    if os.name != "nt" or not wanted:
+    if not wanted:
         return set()
+    if os.name != "nt":
+        raise OSError("process snapshot is Windows-only")
     if not hasattr(ctypes, "WinDLL"):
         raise OSError("process snapshot is Windows-only")
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -1289,11 +1291,6 @@ def _win_running_images(wanted: set[str]) -> set[str]:
 
 def desktop_surfaces_view() -> Reading:
     """Which founder apps are running. Present/absent only. Never start or kill."""
-    if os.name != "nt":
-        return Reading.unreachable(
-            "process snapshot",
-            "unreachable: Windows-only (R-0011)",
-        )
     wanted = {image.lower() for image, _ in _SURFACE_IMAGES}
     try:
         running = _win_running_images(wanted)
