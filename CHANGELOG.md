@@ -1,3 +1,9 @@
+## 2026-09-11 - gh search closed is --state, not --closed date
+
+`--closed` is a date filter; it ate `--limit` and zeroed completed.
+`gh search prs` JSON has no `headRefName`. Occupied heads stay CLAIMS.
+Four 405s unchanged.
+
 ## 2026-09-11 - public board Pages + org scan (netie-control#11)
 
 `GET /v1/board` is `gh search issues --owner Netie-AI`, allow/deny regex,

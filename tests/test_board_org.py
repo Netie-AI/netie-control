@@ -140,6 +140,15 @@ def test_board_calls_gh_search_owner_not_four_repo_list(monkeypatch) -> None:
     calls = seen["calls"]
     assert any(c[:3] == ["gh", "search", "issues"] for c in calls)
     assert any("--owner" in c and "Netie-AI" in c for c in calls)
+    issue_calls = [c for c in calls if c[:3] == ["gh", "search", "issues"]]
+    assert any(
+        "--state" in c and c[c.index("--state") + 1] == "closed" for c in issue_calls
+    )
+    assert all("--closed" not in c for c in issue_calls)
+    pr_calls = [c for c in calls if c[:3] == ["gh", "search", "prs"]]
+    assert pr_calls
+    fields = pr_calls[0][pr_calls[0].index("--json") + 1]
+    assert "headRefName" not in fields
     assert reading.ok is True
     assert reading.source == "gh search issues"
     assert reading.data["items"][0]["number"] == 11
