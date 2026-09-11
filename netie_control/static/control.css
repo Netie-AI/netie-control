@@ -316,6 +316,24 @@ a:hover { text-decoration: underline; }
   overflow: auto;
   max-height: none;
 }
+.workbench #boardBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.workbench .kanban.board-slices {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: 1fr 1fr;
+  overflow: visible;
+}
+.workbench .board-slices .kcol {
+  max-height: 12rem;
+  min-height: 7rem;
+  overflow: auto;
+}
 .workbench .work-row {
   display: flex;
   flex-direction: column;
@@ -420,6 +438,9 @@ th {
 .tag.epic { color: var(--acc); border-color: var(--acc); }
 .tag.blocked { color: var(--warn); border-color: var(--warn); }
 .tag.seated { color: var(--ok); border-color: var(--ok); }
+.tag.running { color: var(--ok); border-color: var(--ok); }
+.tag.pr { color: var(--acc); border-color: var(--acc); }
+.tag.action { color: var(--muted); border-color: var(--muted); }
 .tag.cursor { color: var(--acc); border-color: var(--acc); }
 .tag.claude { color: var(--warn); border-color: var(--warn); }
 
@@ -428,6 +449,9 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 0.75rem;
   margin-top: 0.6rem;
+}
+.board-slices {
+  grid-template-columns: 1fr 1fr;
 }
 .kcol {
   background: rgba(0,0,0,.22);

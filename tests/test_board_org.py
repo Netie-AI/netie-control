@@ -103,29 +103,43 @@ def test_pickup_tray_does_not_silent_cap_at_forty() -> None:
 def test_board_calls_gh_search_owner_not_four_repo_list(monkeypatch) -> None:
     from netie_control import sources
 
-    seen: dict[str, object] = {}
+    seen: dict[str, list[list[str]]] = {"calls": []}
 
-    def fake_hidden(argv: object, **_k: object) -> subprocess.CompletedProcess[str]:
-        seen["argv"] = argv
-        body = json.dumps(
-            [
-                {
-                    "number": 11,
-                    "title": "org board",
-                    "url": "https://github.com/Netie-AI/netie-control/issues/11",
-                    "labels": [],
-                    "repository": {"nameWithOwner": "Netie-AI/netie-control"},
-                }
-            ]
-        )
-        return subprocess.CompletedProcess(argv, 0, body, "")  # type: ignore[arg-type]
+    def fake_run(argv: object, **_k: object) -> subprocess.CompletedProcess[str]:
+        cmd = [str(x) for x in list(argv)]  # type: ignore[arg-type]
+        seen["calls"].append(cmd)
+        if "repo" in cmd and "list" in cmd:
+            body = json.dumps(
+                [
+                    {
+                        "nameWithOwner": "Netie-AI/Pointer",
+                        "isArchived": False,
+                        "isFork": False,
+                    }
+                ]
+            )
+        elif "run" in cmd and "list" in cmd:
+            body = "[]"
+        else:
+            body = json.dumps(
+                [
+                    {
+                        "number": 11,
+                        "title": "org board",
+                        "url": "https://github.com/Netie-AI/netie-control/issues/11",
+                        "labels": [],
+                        "assignees": [],
+                        "repository": {"nameWithOwner": "Netie-AI/netie-control"},
+                    }
+                ]
+            )
+        return subprocess.CompletedProcess(cmd, 0, body, "")
 
-    monkeypatch.setattr(sources, "_run_hidden", fake_hidden)
+    monkeypatch.setattr(sources.subprocess, "run", fake_run)
     reading = sources.board(timeout=1)
-    argv = list(seen.get("argv") or [])
-    assert argv[:3] == ["gh", "search", "issues"]
-    assert "--owner" in argv and "Netie-AI" in argv
-    assert "--repo" not in argv
+    calls = seen["calls"]
+    assert any(c[:3] == ["gh", "search", "issues"] for c in calls)
+    assert any("--owner" in c and "Netie-AI" in c for c in calls)
     assert reading.ok is True
     assert reading.source == "gh search issues"
     assert reading.data["items"][0]["number"] == 11

@@ -12,6 +12,7 @@ Actions reprints it hourly. GitHub Issues stay SoT. Control does not assign.
 
 1. `GET http://127.0.0.1:8040/v1/contract`
 2. `GET /v1/pickup` then `GET /v1/board` then `GET /v1/fleet` then `GET /v1/you` then `GET /v1/coordinate` then `GET /v1/plans`
+   Live board (issues/PRs/Actions + CLAIMS RUNNING): `GET /v1/ops` (15s UI poll).
 3. Claim the GitHub issue. Then CLAIMS.json. Then work.
 
 Control is the assignment **surface**. Control does not assign. Cortex runs.
@@ -32,7 +33,7 @@ that census onto GitHub Pages hourly. Converse is Crew `http://127.0.0.1:8020`.
 
 | Job | Owner |
 |---|---|
-| See who holds what | Control `:8040` |
+| See who holds what | Control `:8040` (`GET /v1/ops` 15s poll) |
 | Invoke map | Control `GET /v1/coordinate` (display). Owners invoke. |
 | Claim / comment | GitHub Issues + CLAIMS.json |
 | Run work | Cortex |

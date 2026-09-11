@@ -26,6 +26,12 @@ displays it.
 
 They are declared and rendered; clicking one does nothing.
 
+**2026-09-06:** `GET /v1/launchers` lists name, cwd, argv. Desk shows argv
+as copy-only. Click still does nothing.
+
+**2026-09-07:** `GET /v1/ops` 15s poll lists GitHub issues/PRs/Actions and
+CLAIMS RUNNING seats. Display only. Click still does not execute.
+
 **Unlock:** an answer to who may launch. Under DR-0004 Option A there is no
 authentication anywhere in the estate, so a wired launcher is remote code execution for
 anyone who can reach the port. Wire them when Control has a principal, or bind to

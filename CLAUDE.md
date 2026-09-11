@@ -36,8 +36,9 @@ then `GET /v1/pickup`, `GET /v1/board`, `GET /v1/fleet`, `GET /v1/you`, and `GET
 which desktop app is present).
 Pickup is the tray of unseated GitHub work plus the org-wide board scan.
 `GET /v1/board` is `gh search issues --owner Netie-AI` with allow/deny regex,
-not a frozen four-repo list. GitHub Issues remain SoT. `git pull` is code.
-Public board (no pull): `https://netie-ai.github.io/netie-control/` hourly.
+not a frozen four-repo list. Live shared board is `GET /v1/ops` (15s poll:
+issues, PRs, Actions, CLAIMS RUNNING seats). GitHub Issues remain SoT.
+`git pull` is code. Public board (no pull): `https://netie-ai.github.io/netie-control/` hourly.
 Control still answers 405 on `/v1/run` `/v1/goal` `/v1/route` `/v1/secrets`.
 Converse lives on Crew `:8020`. HT1 and HT2 stay HUMAN_STOP - do not invent
 host URLs or prices.

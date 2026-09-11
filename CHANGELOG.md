@@ -1,10 +1,18 @@
 ## 2026-09-11 - public board Pages + org scan (netie-control#11)
 
-`GET /v1/board` is `gh search issues --owner Netie-AI`, allow/deny regex.
-Actions publishes the same census to GitHub Pages hourly so a friend does not
-need `git pull` to see open work. `git pull` is still code. Issues stay SoT.
+`GET /v1/board` is `gh search issues --owner Netie-AI`, allow/deny regex,
+plus completed issues, open PRs, and Actions on matching repos. Actions
+publishes the census to GitHub Pages hourly so a friend does not need
+`git pull` to see open work. `git pull` is still code. Issues stay SoT.
 Control still does not assign and does not mint PRD/Epic/Ticket (F-0030).
 Four 405s unchanged.
+
+## 2026-09-07 - Live ops poll: GitHub board + CLAIMS RUNNING seats
+
+`GET /v1/ops` is the 15s UI poll (board + fleet + pickup). RUNNING/SEATED
+CLAIMS heads are occupied. One writer per unused branch. Control still
+does not assign. POST /v1/run stays 405. Issue #5 stays open (P-CTL-2
+launchers unwired).
 
 ## 2026-09-06 - sources.py imports on Ubuntu
 
@@ -12,36 +20,18 @@ Four 405s unchanged.
 Tests can collect. Desktop snapshot still present/absent only (R-0015).
 Four 405s unchanged.
 
-## 2026-09-06 - backstage backends, no console flash
+## 2026-09-06 - Desk harden: wakes, sidecar, crew-bind
 
-GET /v1/stage lists loopback listeners and powershell.exe parent owners.
-Control does not start, hide, or kill them (R-0015). Desk probes use
-CREATE_NO_WINDOW. Estate watchdog no longer pops Docker Desktop or a
-nested PowerShell console. Four 405s unchanged.
+Talk live stays Crew GET `/crew/wakes`. Wake rows (kind/state/note) paint
+on coordinate. HTML GET `/` is not enough (hung `:8020` still serves it).
+Sidecar `:8023` is the engine host. `crew-bind` never greens, even when
+talk and sidecar are live. Coordinate poll refreshes talk/sidecar strip
+without invent-green. Four 405s unchanged. Issue #5 stays open.
 
-## 2026-09-03 - OpenVault playground + Pointer confirm-gate
+## 2026-09-04 - Crew assignments on the conveyor
 
-GET /v1/pointer lists Pointer plan-guard `_requireConfirm` from disk and
-Pointer.exe present/absent. Control does not start Electron (R-0015).
-OpenVault view probes :3010 in the same 1.5s pool as healthz/usage/free/ship.
-Desk paints /vault and /playground. Control does not start :3010. Four 405s
-unchanged.
-
-## 2026-09-03 - Grok/Crew paste briefs on GET /v1/prompts
-
-GET /v1/prompts now lists paste-ready grok-master plus writer lanes
-(Crew, OpenVault, Control, Constructor, Pointer, memory, OpenIDE).
-WIP cap is 2. Control does not spawn. POST is not 200. Four 405s
-unchanged. Does not copy grok-bot, Anthropic strings, n8n, or AGPL.
-Belt/talk/health probe engine :8023 in the same 1.5s pool when hung :8020
-404s or hangs. Constructor live href follows NETIE_CORTEX_URL. Does not
-kill :8020. GET /v1/openide lists AirGPT OpenIDE liveness (display only).
-
-## 2026-09-03 - Incomplete plans hub
-
-GET /v1/plans lists analog clone remaining work (D:\\ trees) plus open
-PARKING_LOT headings. Display only. POST is not 200. Four 405s unchanged.
-Does not unpark P1. Does not copy grok-bot, AGPL, GPL, or leaked Claude Code.
+GET `/` paints Crew `assignments` from belt JSON. Empty is named none.
+Control still does not assign. POST `/v1/run` stays 405.
 
 ## 2026-09-03 - GET /v1/state stays display-only
 
