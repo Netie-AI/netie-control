@@ -169,9 +169,52 @@ def _ticket_card(r: dict[str, Any]) -> str:
 
 
 def _slice_col(title: str, rows: list[dict[str, Any]], empty: str) -> str:
-    cards = "".join(_ticket_card(x) for x in rows[:24]) or f'<p class="absent">{_esc(empty)}</p>'
+    cards = "".join(_ticket_card(x) for x in rows) or f'<p class="absent">{_esc(empty)}</p>'
     return (
         f'<section class="kcol"><h3>{_esc(title)} {len(rows)}</h3>{cards}</section>'
+    )
+
+
+def public_board_page(reading: dict[str, Any], *, built_at: str = "") -> str:
+    """Static org board for GitHub Pages. Display only. Issues stay SoT."""
+    reading = reading if isinstance(reading, dict) else {}
+    ok = bool(reading.get("ok"))
+    data = reading.get("data") if isinstance(reading.get("data"), dict) else {}
+    if ok:
+        inner = _board_body(data)
+    else:
+        inner = (
+            '<p class="absent">Board unread: '
+            f'{_esc(reading.get("detail") or "no reason given")}</p>'
+            '<p class="absent">Source: <code>'
+            f'{_esc(reading.get("source") or "")}</code></p>'
+        )
+    built = ""
+    if built_at:
+        built = (
+            f"<p>Page built <code>{_esc(built_at)}</code>. "
+            "GitHub Issues are SoT. This page is a view, not a second ticket list.</p>"
+        )
+    return (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Netie Control public board</title>"
+        "<style>body{margin:1rem;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;"
+        "background:#111;color:#e7ebe2}a{color:#8ab4ff}.absent{color:#c9a227}"
+        ".kanban{display:flex;gap:1rem;align-items:flex-start;overflow:auto}"
+        ".kcol{min-width:16rem;flex:1}"
+        ".work-row{margin:0.4rem 0;padding:0.4rem 0;border-bottom:1px solid #333}"
+        ".btn{display:inline-block;margin-right:0.3rem}code{font-size:12px}</style>"
+        "</head><body><h1>Netie-AI open tasks</h1>"
+        f"{built}"
+        "<p>Control does not assign. Claim on the GitHub issue. "
+        "POST /v1/run stays 405. PRD/Epic/Ticket minting stays Cortex "
+        "Ticket Runner, not this page (F-0030).</p>"
+        f"{inner}"
+        '<p>Repo <a href="https://github.com/Netie-AI/netie-control">'
+        "Netie-AI/netie-control</a>. Local desk "
+        "<code>http://127.0.0.1:8040/#board</code>.</p>"
+        "</body></html>"
     )
 
 
@@ -186,6 +229,18 @@ def _board_body(d: dict[str, Any]) -> str:
             "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign. "
             "PRs show occupied heads. Actions status is GitHub's, never invented green.</p>"
         ),
+    ]
+    query = d.get("query")
+    if query:
+        bits.append(f"<p>Owner scan <code>{_esc(query)}</code>.</p>")
+    if d.get("truncated"):
+        bits.append(
+            '<p class="absent">Truncated: showing '
+            f'{_esc(d.get("shown") or len(open_rows))} at cap {_esc(d.get("cap") or "")}. '
+            "Not a quiet omission.</p>"
+        )
+    bits.extend(
+        [
         (
             f'<p class="absent">Live poll GET /v1/ops every {_esc(poll_s or "15")}s. '
             "Manual Refresh is not the only path.</p>"
@@ -196,7 +251,8 @@ def _board_body(d: dict[str, Any]) -> str:
         _slice_col("Open PRs", prs, "No open PRs returned."),
         _slice_col("Actions", actions, "No Actions runs returned."),
         "</div>",
-    ]
+        ]
+    )
     if d.get("unreachable"):
         bits.append(
             '<p class="absent">Not shown, unreachable: '
@@ -232,7 +288,7 @@ def _pickup_body(d: Any) -> str:
         )
         return "".join(bits)
     rows_html = []
-    for r in items[:32]:
+    for r in items:
         href = str(r.get("href") or "")
         tags = f'<span class="tag">{_esc(r.get("kind"))}</span>'
         if r.get("is_epic"):
@@ -1628,23 +1684,30 @@ the founder's desktop software (R-0015).</p></div>
   function boardHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
-    var openRows = (d.items || d.open || []).slice(0, 80);
+    var openRows = d.items || d.open || [];
     var completed = d.completed || [];
     var prs = d.prs || [];
     var actions = d.actions || [];
     var extra = "";
+    if (d.truncated) {{
+      extra += '<p class="absent">Truncated: showing '
+        + esc(d.shown || openRows.length) + " at cap " + esc(d.cap || "")
+        + ". Not a quiet omission.</p>";
+    }}
     if (d.unreachable && d.unreachable.length) {{
       extra = '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
     }}
     var poll = d.poll_s || 15;
     function sliceCol(title, rows, empty) {{
       rows = rows || [];
-      var cards = rows.slice(0, 24).map(ticketCardHtml).join("")
+      var cards = rows.map(ticketCardHtml).join("")
         || ('<p class="absent">' + esc(empty) + "</p>");
       return '<section class="kcol"><h3>' + esc(title) + " " + rows.length + "</h3>" + cards + "</section>";
     }}
     return "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign. "
       + "PRs show occupied heads. Actions status is GitHub's, never invented green.</p>"
+      + (d.query ? "<p>Owner scan <code>" + esc(d.query) + "</code>.</p>" : "")
+      + extra
       + '<p class="absent">Live poll GET /v1/ops every ' + esc(poll)
       + "s. Manual Refresh is not the only path.</p>"
       + '<div class="kanban board-slices">'
@@ -1652,12 +1715,12 @@ the founder's desktop software (R-0015).</p></div>
       + sliceCol("Completed", completed, "No completed issues returned.")
       + sliceCol("Open PRs", prs, "No open PRs returned.")
       + sliceCol("Actions", actions, "No Actions runs returned.")
-      + "</div>" + extra;
+      + "</div>";
   }}
   function pickupHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
-    var items = (d.items || []).slice(0, 32);
+    var items = d.items || [];
     var head = "<p>Pickup - claim on GitHub. Control does not assign.</p>"
       + '<ol class="steps">'
       + "<li>Open the GitHub issue and comment that you are seating.</li>"

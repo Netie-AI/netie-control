@@ -1412,21 +1412,27 @@ def test_board_tickets_are_open_and_comment_cards(
     assert client.post("/v1/board", json={"seat": True}).status_code != 200
 
 
-def test_board_defaults_include_control_repo() -> None:
+def test_board_defaults_are_regex_owner_scan() -> None:
     from netie_control.sources import (
-        BOARD_REPOS,
+        BOARD_OWNER,
+        BOARD_SEARCH_LIMIT,
         BOARD_SLICES,
         BOARD_WAIT_S,
         OPS_POLL_S,
         PICKUP_BOARD_WAIT_S,
+        board_repo_allowed,
     )
 
-    assert "Netie-AI/netie-control" in BOARD_REPOS
-    assert "Netie-AI/dms" in BOARD_REPOS
+    assert BOARD_OWNER == "Netie-AI"
+    assert board_repo_allowed("Netie-AI/netie-control")
+    assert board_repo_allowed("Netie-AI/dms")
+    assert board_repo_allowed("Netie-AI/Pointer")
+    assert not board_repo_allowed("Netie-AI/demo-repository")
     assert BOARD_WAIT_S <= 4.0
     assert PICKUP_BOARD_WAIT_S <= 1.5
     assert OPS_POLL_S == 15.0
     assert BOARD_SLICES == ("open", "completed", "prs", "actions")
+    assert BOARD_SEARCH_LIMIT >= 100
 
 
 def test_v1_board_fail_closes_hung_gh(
@@ -1834,6 +1840,7 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["run_owner"] == "Cortex"
     assert body["assign_owner"] == "GitHub Issues + CLAIMS.json"
     assert any(u.endswith("/v1/pickup") for u in body["before_seating"])
+    assert any(u.endswith("/v1/board") for u in body["before_seating"])
     assert any(u.endswith("/v1/coordinate") for u in body["before_seating"])
     assert "/v1/run" in body["forbidden"]
     assert body["desk"]["talk_probe"] == "/crew/wakes"
@@ -2989,10 +2996,42 @@ def _fake_gh_run(argv: list[str], **_k: object) -> object:
 
     argv = [str(x) for x in argv]
     joined = " ".join(argv)
-    repo = ""
+    repo = "Netie-AI/netie-control"
     if "--repo" in argv:
         repo = argv[argv.index("--repo") + 1]
-    if "issue" in argv and "--state" in argv and argv[argv.index("--state") + 1] == "open":
+    search_issue = {
+        "number": 5,
+        "title": "live ops desk",
+        "url": f"https://github.com/{repo}/issues/5",
+        "labels": [],
+        "assignees": [{"login": "jian-hong"}],
+        "repository": {"nameWithOwner": repo},
+    }
+    search_closed = {
+        "number": 7,
+        "title": "belt assign",
+        "url": f"https://github.com/{repo}/issues/7",
+        "labels": [],
+        "assignees": [],
+        "closedAt": "2026-09-04T08:37:56Z",
+        "repository": {"nameWithOwner": repo},
+    }
+    search_pr = {
+        "number": 9,
+        "title": "wakes honesty",
+        "url": f"https://github.com/{repo}/pull/9",
+        "headRefName": "cursor/control-desk-harden-72b4",
+        "isDraft": False,
+        "updatedAt": "2026-09-06T11:08:11Z",
+        "repository": {"nameWithOwner": repo},
+    }
+    if "search" in argv and "issues" in argv and "--closed" in argv:
+        Proc.stdout = json.dumps([search_closed])
+    elif "search" in argv and "issues" in argv:
+        Proc.stdout = json.dumps([search_issue])
+    elif "search" in argv and "prs" in argv:
+        Proc.stdout = json.dumps([search_pr])
+    elif "issue" in argv and "--state" in argv and argv[argv.index("--state") + 1] == "open":
         Proc.stdout = json.dumps(
             [
                 {
@@ -3027,6 +3066,16 @@ def _fake_gh_run(argv: list[str], **_k: object) -> object:
                     "headRefName": "cursor/control-desk-harden-72b4",
                     "isDraft": False,
                     "updatedAt": "2026-09-06T11:08:11Z",
+                }
+            ]
+        )
+    elif "repo" in argv and "list" in argv:
+        Proc.stdout = json.dumps(
+            [
+                {
+                    "nameWithOwner": "Netie-AI/netie-control",
+                    "isArchived": False,
+                    "isFork": False,
                 }
             ]
         )

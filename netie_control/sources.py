@@ -21,10 +21,8 @@ import subprocess
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from ctypes import wintypes
 from dataclasses import dataclass, field
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -38,6 +36,10 @@ OPS_POLL_S = 15.0
 RUNNING_ROLES = frozenset({"SEATED", "RUNNING"})
 OCCUPIED_ROLES = frozenset({"SEATED", "RUNNING", "HELD", "EXTRA_STOP"})
 BOARD_SLICES = ("open", "completed", "prs", "actions")
+BOARD_OWNER = "Netie-AI"
+BOARD_SEARCH_LIMIT = 100
+BOARD_REPO_ALLOW = re.compile(r"^Netie-AI/[A-Za-z0-9._-]+$")
+BOARD_REPO_DENY = re.compile(r"(?i)^Netie-AI/(demo-repository)$")
 KB_WAIT_S = 1.5
 CORTEX_WAIT_S = 1.5
 SIDECAR_WAIT_S = 1.5
@@ -187,6 +189,7 @@ def agent_contract() -> dict[str, Any]:
         },
         "before_seating": [
             f"{base}/v1/pickup",
+            f"{base}/v1/board",
             f"{base}/v1/fleet",
             f"{base}/v1/you",
             f"{base}/v1/coordinate",
@@ -200,6 +203,7 @@ def agent_contract() -> dict[str, Any]:
             "you_steps": len(HITL_STEPS),
             "usage_probe": "/api/usage",
             "board_wait_s": BOARD_WAIT_S,
+            "board_owner": BOARD_OWNER,
             "pickup_board_wait_s": PICKUP_BOARD_WAIT_S,
             "ops_poll_s": OPS_POLL_S,
             "ops_poll": "/v1/ops",
@@ -1055,11 +1059,15 @@ def pickup_tray(
             }
         )
     return {
-        "items": items[:40],
-        "count": min(len(items), 40),
+        "items": items,
+        "count": len(items),
+        "total": len(items),
+        "truncated": bool(board_data.get("truncated")),
+        "cap": BOARD_SEARCH_LIMIT,
         "rule": (
             "Pickup is display. Claim on the GitHub issue, then CLAIMS.json. "
-            "Control GET /v1/pickup does not seat. POST /v1/run stays 405."
+            "Control GET /v1/pickup does not seat. POST /v1/run stays 405. "
+            "Board is org-wide gh search; Control does not assign."
         ),
     }
 
@@ -1217,45 +1225,52 @@ _SURFACE_IMAGES = (
 _TH32CS_SNAPPROCESS = 0x00000002
 _MAX_PATH = 260
 
+if os.name == "nt":
+    from ctypes import wintypes as _wintypes
 
-class _PROCESSENTRY32W(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wintypes.DWORD),
-        ("cntUsage", wintypes.DWORD),
-        ("th32ProcessID", wintypes.DWORD),
-        ("th32DefaultHeapID", ctypes.c_size_t),
-        ("th32ModuleID", wintypes.DWORD),
-        ("cntThreads", wintypes.DWORD),
-        ("th32ParentProcessID", wintypes.DWORD),
-        ("pcPriClassBase", ctypes.c_long),
-        ("dwFlags", wintypes.DWORD),
-        ("szExeFile", wintypes.WCHAR * _MAX_PATH),
-    ]
+    class _PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", _wintypes.DWORD),
+            ("cntUsage", _wintypes.DWORD),
+            ("th32ProcessID", _wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", _wintypes.DWORD),
+            ("cntThreads", _wintypes.DWORD),
+            ("th32ParentProcessID", _wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", _wintypes.DWORD),
+            ("szExeFile", _wintypes.WCHAR * _MAX_PATH),
+        ]
+else:
+    _wintypes = None  # type: ignore[assignment]
+    _PROCESSENTRY32W = None  # type: ignore[misc,assignment]
 
 
 def _win_running_images(wanted: set[str]) -> set[str]:
     """Lowercase exe names from wanted that are running. Never starts them."""
     if not wanted:
         return set()
+    if os.name != "nt":
+        raise OSError("process snapshot is Windows-only")
     if not hasattr(ctypes, "WinDLL"):
         raise OSError("process snapshot is Windows-only")
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [_wintypes.DWORD, _wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = _wintypes.HANDLE
     kernel32.Process32FirstW.argtypes = [
-        wintypes.HANDLE,
+        _wintypes.HANDLE,
         ctypes.POINTER(_PROCESSENTRY32W),
     ]
-    kernel32.Process32FirstW.restype = wintypes.BOOL
+    kernel32.Process32FirstW.restype = _wintypes.BOOL
     kernel32.Process32NextW.argtypes = [
-        wintypes.HANDLE,
+        _wintypes.HANDLE,
         ctypes.POINTER(_PROCESSENTRY32W),
     ]
-    kernel32.Process32NextW.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.Process32NextW.restype = _wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [_wintypes.HANDLE]
+    kernel32.CloseHandle.restype = _wintypes.BOOL
     snap = kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
-    if snap == wintypes.HANDLE(-1).value:
+    if snap == _wintypes.HANDLE(-1).value:
         raise OSError("CreateToolhelp32Snapshot failed")
     pe = _PROCESSENTRY32W()
     pe.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
@@ -1936,12 +1951,132 @@ def _gh_workflow_runs(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[di
     return rows, ""
 
 
-BOARD_REPOS: tuple[str, ...] = (
-    "Netie-AI/dms",
-    "Netie-AI/Cortex",
-    "Netie-AI/OpenVault",
-    "Netie-AI/netie-control",
-)
+def board_repo_allowed(repo: str) -> bool:
+    """True when repo is a Netie-AI work tree, not a deny-regex noise name."""
+    name = str(repo or "").strip()
+    return bool(BOARD_REPO_ALLOW.fullmatch(name)) and not BOARD_REPO_DENY.search(name)
+
+
+def _search_repo_name(it: dict[str, Any]) -> str:
+    repo_obj = it.get("repository")
+    if isinstance(repo_obj, dict):
+        return str(repo_obj.get("nameWithOwner") or "")
+    return str(it.get("repo") or "")
+
+
+def issues_from_gh_search(payload: Any, *, limit: int = BOARD_SEARCH_LIMIT) -> dict[str, Any]:
+    """Map gh search JSON to open-issue rows. Regex allow/deny. Display only."""
+    raw = payload if isinstance(payload, list) else []
+    rows: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    seen_skip: set[str] = set()
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        repo = _search_repo_name(it)
+        if not board_repo_allowed(repo):
+            if repo and repo not in seen_skip:
+                seen_skip.add(repo)
+                skipped.append(repo)
+            continue
+        rows.append(_issue_row(repo, it, kind="issue"))
+    truncated = len(raw) >= int(limit)
+    return {
+        "items": rows,
+        "skipped": skipped,
+        "truncated": truncated,
+        "shown": len(rows),
+        "cap": int(limit),
+        "query": f"owner:{BOARD_OWNER} is:open",
+        "allow": BOARD_REPO_ALLOW.pattern,
+        "deny": BOARD_REPO_DENY.pattern,
+        "unreachable": [],
+    }
+
+
+def list_board_repos(*, timeout: float = BOARD_WAIT_S) -> tuple[list[str], str]:
+    """Owner repos matching allow/deny regex. Not a frozen product list."""
+    items, why = _gh_json(
+        [
+            "gh", "repo", "list", BOARD_OWNER, "--limit", "100",
+            "--json", "nameWithOwner,isArchived,isFork",
+        ],
+        repo=BOARD_OWNER,
+        timeout=timeout,
+    )
+    if why:
+        return [], why
+    names: list[str] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("nameWithOwner") or "")
+        if it.get("isArchived") or it.get("isFork"):
+            continue
+        if board_repo_allowed(name):
+            names.append(name)
+    return names, ""
+
+
+def _owner_search_issues(*, closed: bool, timeout: float) -> tuple[list[dict[str, Any]], str, bool]:
+    argv = [
+        "gh", "search", "issues", "--owner", BOARD_OWNER,
+        "--limit", str(BOARD_SEARCH_LIMIT),
+        "--json", "number,title,labels,url,repository,assignees,closedAt",
+    ]
+    if closed:
+        argv[5:5] = ["--closed"]
+    else:
+        argv[5:5] = ["--state", "open"]
+    items, why = _gh_json(argv, repo=BOARD_OWNER, timeout=timeout)
+    if why:
+        return [], why, False
+    parsed = issues_from_gh_search(items, limit=BOARD_SEARCH_LIMIT)
+    kind = "completed" if closed else "issue"
+    rows = []
+    for row in parsed["items"]:
+        row = dict(row)
+        row["kind"] = kind
+        rows.append(row)
+    return rows, "", bool(parsed.get("truncated"))
+
+
+def _owner_search_prs(*, timeout: float) -> tuple[list[dict[str, Any]], str]:
+    items, why = _gh_json(
+        [
+            "gh", "search", "prs", "--owner", BOARD_OWNER, "--state", "open",
+            "--limit", "40",
+            "--json", "number,title,url,repository,headRefName,isDraft,updatedAt",
+        ],
+        repo=BOARD_OWNER,
+        timeout=timeout,
+    )
+    if why:
+        return [], why
+    rows: list[dict[str, Any]] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        repo = _search_repo_name(it)
+        if not board_repo_allowed(repo):
+            continue
+        num = it.get("number")
+        rows.append(
+            {
+                "repo": repo,
+                "number": num,
+                "title": it.get("title"),
+                "url": it.get("url") or f"https://github.com/{repo}/pull/{num}",
+                "head": it.get("headRefName") or "",
+                "draft": bool(it.get("isDraft")),
+                "updated_at": it.get("updatedAt") or "",
+                "kind": "pr",
+            }
+        )
+    return rows, ""
+
+
+BOARD_REPOS: tuple[str, ...] = ()
 
 _BOARD_FETCHERS: dict[str, Any] = {
     "open": _gh_open_issues,
@@ -1952,32 +2087,61 @@ _BOARD_FETCHERS: dict[str, Any] = {
 
 
 def board(
-    repos: tuple[str, ...] = BOARD_REPOS,
+    repos: tuple[str, ...] | None = None,
     *,
     timeout: float = BOARD_WAIT_S,
     slices: tuple[str, ...] = BOARD_SLICES,
 ) -> Reading:
-    """GitHub Issues / PRs / Actions per repo, straight from gh. Display only.
+    """Owner-wide GitHub Issues / PRs plus Actions per matching repo. Display only.
 
-    GET /v1/board uses BOARD_WAIT_S (4s) and every slice. Pickup passes
-    PICKUP_BOARD_WAIT_S (1.5s) with slices=('open',) so a hung gh cannot
-    stall unseated CLAIMS. Unread stays named; empty lists are honest empty.
+    Open/completed/PRs are `gh search --owner`. Actions still need per-repo
+    `gh run list` on regex-filtered owner repos. Control does not assign.
     """
     wanted = tuple(s for s in slices if s in _BOARD_FETCHERS) or ("open",)
-    jobs: list[tuple[str, str, Any]] = []
-    for repo in repos:
-        for slice_name in wanted:
-            jobs.append((slice_name, repo, partial(_BOARD_FETCHERS[slice_name], repo, timeout=timeout)))
-    buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in wanted}
     unreachable: list[str] = []
-    workers = max(len(jobs), 1)
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = [(slice_name, repo, pool.submit(fn)) for slice_name, repo, fn in jobs]
-        for slice_name, repo, fut in futs:
-            rows, why = fut.result()
-            buckets.setdefault(slice_name, []).extend(rows)
-            if why:
-                unreachable.append(f"{slice_name} {why}")
+    skipped: list[str] = []
+    truncated = False
+    buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in wanted}
+
+    if "open" in wanted:
+        rows, why, trunc = _owner_search_issues(closed=False, timeout=timeout)
+        truncated = truncated or trunc
+        if why:
+            unreachable.append(f"open {why}")
+        else:
+            buckets["open"] = rows
+    if "completed" in wanted:
+        rows, why, trunc = _owner_search_issues(closed=True, timeout=timeout)
+        truncated = truncated or trunc
+        if why:
+            unreachable.append(f"completed {why}")
+        else:
+            buckets["completed"] = rows
+    if "prs" in wanted:
+        rows, why = _owner_search_prs(timeout=timeout)
+        if why:
+            unreachable.append(f"prs {why}")
+        else:
+            buckets["prs"] = rows
+
+    action_repos: tuple[str, ...] = repos if repos is not None else ()
+    if "actions" in wanted and repos is None:
+        found, why = list_board_repos(timeout=timeout)
+        if why:
+            unreachable.append(f"actions {why}")
+        else:
+            action_repos = tuple(found)
+    if "actions" in wanted and action_repos:
+        with ThreadPoolExecutor(max_workers=max(len(action_repos), 1)) as pool:
+            futs = [
+                (repo, pool.submit(_gh_workflow_runs, repo, timeout))
+                for repo in action_repos
+            ]
+            for repo, fut in futs:
+                rows, why = fut.result()
+                buckets.setdefault("actions", []).extend(rows)
+                if why:
+                    unreachable.append(f"actions {why}")
 
     open_rows = buckets.get("open") or []
     completed = buckets.get("completed") or []
@@ -1985,7 +2149,14 @@ def board(
     actions = buckets.get("actions") or []
     any_rows = bool(open_rows or completed or prs or actions)
     if unreachable and not any_rows:
-        return Reading.unreachable("gh issue/pr/run list", "; ".join(unreachable))
+        return Reading.unreachable("gh search issues", "; ".join(unreachable))
+    detail_parts: list[str] = []
+    if truncated:
+        detail_parts.append(f"truncated at cap {BOARD_SEARCH_LIMIT}")
+    if skipped:
+        detail_parts.append("skipped " + "; ".join(skipped))
+    if unreachable:
+        detail_parts.append("some github slices unreachable: " + "; ".join(unreachable))
     return Reading(
         ok=True,
         data={
@@ -1995,12 +2166,19 @@ def board(
             "prs": prs,
             "actions": actions,
             "unreachable": unreachable,
+            "skipped": skipped,
+            "truncated": truncated,
+            "shown": len(open_rows),
+            "cap": BOARD_SEARCH_LIMIT,
+            "query": f"owner:{BOARD_OWNER} is:open",
+            "allow": BOARD_REPO_ALLOW.pattern,
+            "deny": BOARD_REPO_DENY.pattern,
             "poll_s": OPS_POLL_S,
             "poll": "/v1/ops",
             "slices": list(wanted),
         },
-        detail=("some github slices unreachable: " + "; ".join(unreachable)) if unreachable else "",
-        source="gh issue/pr/run list",
+        detail="; ".join(detail_parts),
+        source="gh search issues",
     )
 
 

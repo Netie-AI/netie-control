@@ -1,10 +1,24 @@
+## 2026-09-11 - public board Pages + org scan (netie-control#11)
+
+`GET /v1/board` is `gh search issues --owner Netie-AI`, allow/deny regex,
+plus completed issues, open PRs, and Actions on matching repos. Actions
+publishes the census to GitHub Pages hourly so a friend does not need
+`git pull` to see open work. `git pull` is still code. Issues stay SoT.
+Control still does not assign and does not mint PRD/Epic/Ticket (F-0030).
+Four 405s unchanged.
+
 ## 2026-09-07 - Live ops poll: GitHub board + CLAIMS RUNNING seats
 
-`GET /v1/board` now lists open issues, completed issues, open PRs, and
-Actions runs from gh. `GET /v1/ops` is the 15s UI poll (board + fleet +
-pickup). RUNNING/SEATED CLAIMS heads are occupied. One writer per unused
-branch. Control still does not assign. POST /v1/run stays 405. Issue #5
-stays open (P-CTL-2 launchers unwired).
+`GET /v1/ops` is the 15s UI poll (board + fleet + pickup). RUNNING/SEATED
+CLAIMS heads are occupied. One writer per unused branch. Control still
+does not assign. POST /v1/run stays 405. Issue #5 stays open (P-CTL-2
+launchers unwired).
+
+## 2026-09-06 - sources.py imports on Ubuntu
+
+`from ctypes import wintypes` is inside `if os.name == "nt"`. Ubuntu CI
+Tests can collect. Desktop snapshot still present/absent only (R-0015).
+Four 405s unchanged.
 
 ## 2026-09-06 - Desk harden: wakes, sidecar, crew-bind
 
