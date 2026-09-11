@@ -25,5 +25,6 @@ def test_desktop_surfaces_view_does_not_need_win32() -> None:
         assert view.ok is True
         return
     view = sources.desktop_surfaces_view()
-    assert view.ok is True
-    assert all(row["present"] is False for row in view.data["rows"])
+    assert view.ok is False
+    assert "unreachable" in (view.detail or "")
+    assert view.data is None

@@ -1289,6 +1289,11 @@ def _win_running_images(wanted: set[str]) -> set[str]:
 
 def desktop_surfaces_view() -> Reading:
     """Which founder apps are running. Present/absent only. Never start or kill."""
+    if os.name != "nt":
+        return Reading.unreachable(
+            "process snapshot",
+            "unreachable: Windows-only (R-0011)",
+        )
     wanted = {image.lower() for image, _ in _SURFACE_IMAGES}
     try:
         running = _win_running_images(wanted)
