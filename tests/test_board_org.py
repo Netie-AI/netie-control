@@ -177,11 +177,11 @@ def test_public_board_page_is_display_only_and_lists_other_repos() -> None:
 
 
 def test_publish_board_writes_html(tmp_path, monkeypatch) -> None:
-    from netie_control import publish_board, sources
+    from netie_control import publish_board
     from netie_control.sources import Reading, issues_from_gh_search
 
     monkeypatch.setattr(
-        sources,
+        publish_board,
         "board",
         lambda *a, **k: Reading(
             ok=True,

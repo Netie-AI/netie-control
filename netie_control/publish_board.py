@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from netie_control.render import public_board_page
@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     dest = Path(args[0] if args else "site/index.html")
     timeout = float(os.environ.get("NETIE_BOARD_WAIT_S", "15"))
     reading = board(timeout=timeout)
-    built_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    built_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     html = public_board_page(reading.to_dict(), built_at=built_at)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(html, encoding="utf-8")
