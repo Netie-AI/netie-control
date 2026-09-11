@@ -1,3 +1,24 @@
+## 2026-09-11 - public board Pages + org scan (netie-control#11)
+
+`GET /v1/board` is `gh search issues --owner Netie-AI`, allow/deny regex.
+Actions publishes the same census to GitHub Pages hourly so a friend does not
+need `git pull` to see open work. `git pull` is still code. Issues stay SoT.
+Control still does not assign and does not mint PRD/Epic/Ticket (F-0030).
+Four 405s unchanged.
+
+## 2026-09-06 - sources.py imports on Ubuntu
+
+`from ctypes import wintypes` is inside `if os.name == "nt"`. Ubuntu CI
+Tests can collect. Desktop snapshot still present/absent only (R-0015).
+Four 405s unchanged.
+
+## 2026-09-06 - backstage backends, no console flash
+
+GET /v1/stage lists loopback listeners and powershell.exe parent owners.
+Control does not start, hide, or kill them (R-0015). Desk probes use
+CREATE_NO_WINDOW. Estate watchdog no longer pops Docker Desktop or a
+nested PowerShell console. Four 405s unchanged.
+
 ## 2026-09-03 - OpenVault playground + Pointer confirm-gate
 
 GET /v1/pointer lists Pointer plan-guard `_requireConfirm` from disk and

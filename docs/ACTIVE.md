@@ -2,10 +2,11 @@
 
 | Path | What |
 |---|---|
-| `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/plans` `GET /v1/gate` `GET /v1/board` `GET /v1/pads` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
+| `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/plans` `GET /v1/gate` `GET /v1/board` `GET /v1/pads` `GET /v1/stage` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
 | `AGENTS.md` | Seating contract for Cursor, Claude Code, Grok Bot. Same clause as CLAUDE.md operator desk |
 | `netie_control/sources.py` | Read-only readers. Every one returns real data or an explicit unreachable marker. Writes nothing |
-| `netie_control/render.py` | The operator page. Numbered pickup / coordinate / crew steps. An unreachable source renders its reason, never an empty panel. Live hops use `readingJson` so HTTP 404 cannot paint as a quiet reading |
+| `netie_control/render.py` | The operator page plus `public_board_page` for GitHub Pages. An unreachable source renders its reason, never an empty panel. Live hops use `readingJson` so HTTP 404 cannot paint as a quiet reading |
+| `netie_control/publish_board.py` | CI writer for Pages HTML. Display only. Not SoT. Control still does not assign |
 | `netie_control/static/control.css` | Operator chrome. Unread live-dot is warn (`is-unread`). Guaca/Rakazo tokens, Gastown live-dots, original layout |
 | `tests/test_control_stays_plane_4.py` | The constitution as tests - 405s, no key material, no desktop launcher, unknown never renders green |
 
@@ -25,7 +26,7 @@
 | Runtime view | `D:\Netie\Internal\Agents\RUNTIME.md` | file read, parsed; stale named |
 | Claude pads | `claude agents --json` | subprocess, list only, timeout 4s. GET / and coordinate poll defer this. Live list is `GET /v1/pads`. Hung CLI named unread. Does not start Claude |
 | Desktop surfaces | process snapshot for Cursor / Claude / Grok Bot | present/absent only. Never start or kill |
-| Epic/ticket board | GitHub | `gh issue list` (dms, Cortex, OpenVault, netie-control in parallel). Desk paints first; live list is `GET /v1/board` (BOARD_WAIT_S 4s, hung gh named unread). Pickup may overlay board for 1.5s and must not wait on hung gh |
+| Epic/ticket board | GitHub | `gh search issues --owner Netie-AI` (allow/deny regex). Live list `GET /v1/board`. Public Pages hourly at `https://netie-ai.github.io/netie-control/`. Pickup overlay 1.5s. Truncation named |
 | Analog remaining + parked lots | TAS analog catalog + Cortex/Control `PARKING_LOT.md` | file read. Displayed as `GET /v1/plans`. Does not unpark or copy |
 
 ## Does not exist yet
@@ -34,8 +35,8 @@ Cortex dedicated refusal/manifest GET (P-CTL-1 remainder; activity.governance is
 on the page), launcher execution (P-CTL-2), Crew converse
 *inside* Control (P-CTL-3; charter still display-and-launch; belt JSON is shipped).
 Pushed remote still unpushed. Disk GET / puts Cortex + OpenVault in `#hero`
-(not collapsed details). Disk contract `before_seating` lists pickup, fleet,
+(not collapsed details). Disk contract `before_seating` lists pickup, board, fleet,
 you, coordinate, plans. Disk coordinate includes `crew-bind` (`live` false);
-`GET /v1/board` is 4s fail-closed. Live `:8040` may lag until the process is reloaded. Control does not spawn
+`GET /v1/board` is owner-wide gh search, 4s fail-closed. Live `:8040` may lag until the process is reloaded. Control does not spawn
 PRD/Epic/Ticket agents and does not hand out vault credentials - those stay
 Cortex Crew and OpenVault. See `PARKING_LOT.md`.

@@ -17,14 +17,13 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from ctypes import wintypes
 from dataclasses import dataclass, field
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -34,6 +33,11 @@ CREW_BELT_WAIT_S = 1.5
 OPENVAULT_USAGE_WAIT_S = 1.5
 PICKUP_BOARD_WAIT_S = 1.5
 BOARD_WAIT_S = 4.0
+BOARD_OWNER = "Netie-AI"
+BOARD_SEARCH_LIMIT = 100
+# Intent class: open issues under this owner. Deny is noise, not a product list (F-0021).
+BOARD_REPO_ALLOW = re.compile(r"^Netie-AI/[A-Za-z0-9._-]+$")
+BOARD_REPO_DENY = re.compile(r"(?i)^Netie-AI/(demo-repository)$")
 KB_WAIT_S = 1.5
 AIRGPT_WAIT_S = 1.5
 CORTEX_WAIT_S = 1.5
@@ -48,6 +52,20 @@ USAGE_SUMMARY_KEYS = (
     "failed_requests",
     "priced",
 )
+
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _run_hidden(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    """Run a helper with no console flash. Display probes must not popup PowerShell."""
+    if os.name == "nt" and _CREATE_NO_WINDOW:
+        kwargs["creationflags"] = int(kwargs.get("creationflags") or 0) | _CREATE_NO_WINDOW
+        startupinfo = kwargs.get("startupinfo") or subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        kwargs["startupinfo"] = startupinfo
+    check = bool(kwargs.pop("check", False))
+    return subprocess.run(argv, check=check, **kwargs)
 
 
 def _estate_root() -> Path:
@@ -541,6 +559,7 @@ def agent_contract() -> dict[str, Any]:
         },
         "before_seating": [
             f"{base}/v1/pickup",
+            f"{base}/v1/board",
             f"{base}/v1/fleet",
             f"{base}/v1/you",
             f"{base}/v1/coordinate",
@@ -561,6 +580,7 @@ def agent_contract() -> dict[str, Any]:
             "you_steps": len(HITL_STEPS),
             "usage_probe": "/api/usage",
             "board_wait_s": BOARD_WAIT_S,
+            "board_owner": BOARD_OWNER,
             "pickup_board_wait_s": PICKUP_BOARD_WAIT_S,
             "kb_wait_s": KB_WAIT_S,
             "airgpt_wait_s": AIRGPT_WAIT_S,
@@ -1552,12 +1572,17 @@ def pickup_tray(
                 "is_epic": bool(row.get("is_epic")),
             }
         )
+    truncated = bool(board_data.get("truncated"))
     return {
-        "items": items[:40],
-        "count": min(len(items), 40),
+        "items": items,
+        "count": len(items),
+        "total": len(items),
+        "truncated": truncated,
+        "cap": BOARD_SEARCH_LIMIT,
         "rule": (
             "Pickup is display. Claim on the GitHub issue, then CLAIMS.json. "
-            "Control GET /v1/pickup does not seat. POST /v1/run stays 405."
+            "Control GET /v1/pickup does not seat. POST /v1/run stays 405. "
+            "Board is org-wide gh search; Control does not assign."
         ),
     }
 
@@ -2015,6 +2040,11 @@ def _claude_argv() -> list[str] | None:
     """Locate the Claude CLI. Does not start Claude (R-0015)."""
     found = shutil.which("claude")
     if found:
+        path = Path(found)
+        if path.suffix.lower() == ".cmd":
+            exe = path.with_suffix(".exe")
+            if exe.is_file():
+                return [str(exe)]
         return [found]
     home = Path.home()
     appdata = os.environ.get("APPDATA", "")
@@ -2040,7 +2070,7 @@ def claude_pads_view() -> Reading:
             "claude not on PATH (unread, not down-and-quiet)",
         )
     try:
-        proc = subprocess.run(
+        proc = _run_hidden(
             [*argv, "agents", "--json"],
             capture_output=True,
             text=True,
@@ -2089,43 +2119,49 @@ _SURFACE_IMAGES = (
 _TH32CS_SNAPPROCESS = 0x00000002
 _MAX_PATH = 260
 
+# wintypes is Windows-only. Importing it at module load breaks Ubuntu CI.
+if os.name == "nt":
+    from ctypes import wintypes as _wintypes
 
-class _PROCESSENTRY32W(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wintypes.DWORD),
-        ("cntUsage", wintypes.DWORD),
-        ("th32ProcessID", wintypes.DWORD),
-        ("th32DefaultHeapID", ctypes.c_size_t),
-        ("th32ModuleID", wintypes.DWORD),
-        ("cntThreads", wintypes.DWORD),
-        ("th32ParentProcessID", wintypes.DWORD),
-        ("pcPriClassBase", ctypes.c_long),
-        ("dwFlags", wintypes.DWORD),
-        ("szExeFile", wintypes.WCHAR * _MAX_PATH),
-    ]
+    class _PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", _wintypes.DWORD),
+            ("cntUsage", _wintypes.DWORD),
+            ("th32ProcessID", _wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", _wintypes.DWORD),
+            ("cntThreads", _wintypes.DWORD),
+            ("th32ParentProcessID", _wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", _wintypes.DWORD),
+            ("szExeFile", _wintypes.WCHAR * _MAX_PATH),
+        ]
+else:
+    _wintypes = None  # type: ignore[assignment]
+    _PROCESSENTRY32W = None  # type: ignore[misc,assignment]
 
 
 def _win_running_images(wanted: set[str]) -> set[str]:
     """Lowercase exe names from wanted that are running. Never starts them."""
-    if not wanted:
+    if os.name != "nt" or not wanted:
         return set()
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [_wintypes.DWORD, _wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = _wintypes.HANDLE
     kernel32.Process32FirstW.argtypes = [
-        wintypes.HANDLE,
+        _wintypes.HANDLE,
         ctypes.POINTER(_PROCESSENTRY32W),
     ]
-    kernel32.Process32FirstW.restype = wintypes.BOOL
+    kernel32.Process32FirstW.restype = _wintypes.BOOL
     kernel32.Process32NextW.argtypes = [
-        wintypes.HANDLE,
+        _wintypes.HANDLE,
         ctypes.POINTER(_PROCESSENTRY32W),
     ]
-    kernel32.Process32NextW.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.Process32NextW.restype = _wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [_wintypes.HANDLE]
+    kernel32.CloseHandle.restype = _wintypes.BOOL
     snap = kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
-    if snap == wintypes.HANDLE(-1).value:
+    if snap == _wintypes.HANDLE(-1).value:
         raise OSError("CreateToolhelp32Snapshot failed")
     pe = _PROCESSENTRY32W()
     pe.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
@@ -2166,6 +2202,126 @@ def desktop_surfaces_view() -> Reading:
             "note": "present/absent only. Control did not start or kill them (R-0015).",
         },
         source="process snapshot",
+    )
+
+
+_STAGE_PEERS: tuple[tuple[str, int, str], ...] = (
+    ("Cortex engine", 8011, "CortexOS"),
+    ("Cortex engine alt", 8010, "CortexOS"),
+    ("Crew converse", 8020, "Cortex Crew"),
+    ("Crew sidecar", 8023, "Cortex Crew"),
+    ("OpenVault", 5000, "OpenVault"),
+    ("Netie Control", 8040, "plane 4"),
+    ("Skill registry", 8030, "Netie-KB"),
+    ("DMS API", 8090, "DMS"),
+    ("Plane", 8099, "Plane"),
+)
+
+_POPUP_IMAGES = frozenset({"powershell.exe", "pwsh.exe"})
+
+
+def _port_open(port: int, timeout: float = 0.2) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _win_process_rows() -> list[tuple[str, int, int]]:
+    """(image_lower, pid, ppid) for every process. Empty off Windows."""
+    if os.name != "nt":
+        return []
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.argtypes = [_wintypes.DWORD, _wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = _wintypes.HANDLE
+    kernel32.Process32FirstW.argtypes = [
+        _wintypes.HANDLE,
+        ctypes.POINTER(_PROCESSENTRY32W),
+    ]
+    kernel32.Process32FirstW.restype = _wintypes.BOOL
+    kernel32.Process32NextW.argtypes = [
+        _wintypes.HANDLE,
+        ctypes.POINTER(_PROCESSENTRY32W),
+    ]
+    kernel32.Process32NextW.restype = _wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [_wintypes.HANDLE]
+    kernel32.CloseHandle.restype = _wintypes.BOOL
+    snap = kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
+    if snap == _wintypes.HANDLE(-1).value:
+        raise OSError("CreateToolhelp32Snapshot failed")
+    pe = _PROCESSENTRY32W()
+    pe.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+    rows: list[tuple[str, int, int]] = []
+    try:
+        more = kernel32.Process32FirstW(snap, ctypes.byref(pe))
+        while more:
+            rows.append(
+                (pe.szExeFile.lower(), int(pe.th32ProcessID), int(pe.th32ParentProcessID))
+            )
+            more = kernel32.Process32NextW(snap, ctypes.byref(pe))
+        return rows
+    finally:
+        kernel32.CloseHandle(snap)
+
+
+def _popup_owner(parent_image: str) -> str:
+    p = (parent_image or "").lower()
+    if "claude" in p:
+        return "Claude.app (not Plane 4)"
+    if "cursor" in p:
+        return "Cursor"
+    if p in {"svchost.exe", "taskeng.exe", "taskhostw.exe"}:
+        return "Task Scheduler NetieEstate24x7"
+    if "powershell" in p or p == "pwsh.exe":
+        return "nested PowerShell (estate-watchdog / night_watch)"
+    return parent_image or "unknown"
+
+
+def stage_backends_view() -> Reading:
+    """Backstage listeners + console-popup owners. Display only. Never start or kill."""
+    peers = [
+        {
+            "name": name,
+            "port": port,
+            "owner": owner,
+            "up": _port_open(port),
+        }
+        for name, port, owner in _STAGE_PEERS
+    ]
+    popups: list[dict[str, Any]] = []
+    popup_note = "process snapshot skipped (not Windows)"
+    if os.name == "nt":
+        try:
+            rows = _win_process_rows()
+        except OSError as exc:
+            return Reading.unreachable("backstage snapshot", f"unreachable: {exc}")
+        names = {pid: image for image, pid, _ppid in rows}
+        for image, pid, ppid in rows:
+            if image not in _POPUP_IMAGES:
+                continue
+            parent = names.get(ppid, "unknown")
+            popups.append(
+                {
+                    "image": image,
+                    "pid": pid,
+                    "parent": parent,
+                    "owner": _popup_owner(parent),
+                }
+            )
+        popup_note = "present/absent only"
+    return Reading(
+        ok=True,
+        data={
+            "peers": peers,
+            "popups": popups[:40],
+            "note": (
+                "Backstage only. Control did not start or kill them (R-0015). "
+                "Do not popup backends unless the founder prompted. "
+                + popup_note
+            ),
+        },
+        source="backstage snapshot",
     )
 
 
@@ -2630,7 +2786,7 @@ def estate_gate() -> Reading:
     if not script.is_file():
         return Reading.unreachable(str(script), "estate_gate.py not found")
     try:
-        proc = subprocess.run(
+        proc = _run_hidden(
             ["python", str(script), "check"],
             capture_output=True,
             text=True,
@@ -2655,66 +2811,125 @@ def estate_gate() -> Reading:
     )
 
 
-def _gh_open_issues(repo: str, timeout: float = BOARD_WAIT_S) -> tuple[list[dict[str, Any]], str]:
-    """One repo's open issues. Empty rows + reason when gh cannot answer."""
+def board_repo_allowed(repo: str) -> bool:
+    """True when repo is a Netie-AI work tree, not a deny-regex noise name."""
+    name = str(repo or "").strip()
+    return bool(BOARD_REPO_ALLOW.fullmatch(name)) and not BOARD_REPO_DENY.search(name)
+
+
+def _label_names(raw: Any) -> list[str]:
+    names: list[str] = []
+    for item in raw or []:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "")
+        else:
+            name = str(item)
+        if name:
+            names.append(name)
+    return names
+
+
+def issues_from_gh_search(payload: Any, *, limit: int = BOARD_SEARCH_LIMIT) -> dict[str, Any]:
+    """Map gh search JSON to board rows. Regex allow/deny. Display only."""
+    raw = payload if isinstance(payload, list) else []
+    rows: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    seen_skip: set[str] = set()
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        repo_obj = it.get("repository")
+        if isinstance(repo_obj, dict):
+            repo = str(repo_obj.get("nameWithOwner") or "")
+        else:
+            repo = str(it.get("repo") or "")
+        if not board_repo_allowed(repo):
+            if repo and repo not in seen_skip:
+                seen_skip.add(repo)
+                skipped.append(repo)
+            continue
+        labels = _label_names(it.get("labels"))
+        number = it.get("number")
+        rows.append(
+            {
+                "repo": repo,
+                "number": number,
+                "title": it.get("title"),
+                "url": it.get("url") or ticket_github_url(f"{repo}#{number}"),
+                "is_epic": "epic" in labels,
+                "blocked": "blocked" in labels,
+            }
+        )
+    truncated = len(raw) >= int(limit)
+    return {
+        "items": rows,
+        "skipped": skipped,
+        "truncated": truncated,
+        "shown": len(rows),
+        "cap": int(limit),
+        "query": f"owner:{BOARD_OWNER} is:open",
+        "allow": BOARD_REPO_ALLOW.pattern,
+        "deny": BOARD_REPO_DENY.pattern,
+        "unreachable": [],
+    }
+
+
+def _gh_search_open_issues(timeout: float = BOARD_WAIT_S) -> tuple[dict[str, Any], str]:
+    """Owner-wide open issues. Empty payload + reason when gh cannot answer."""
     try:
-        proc = subprocess.run(
-            ["gh", "issue", "list", "--repo", repo, "--state", "open",
-             "--limit", "50", "--json", "number,title,labels,url"],
-            capture_output=True, text=True, timeout=timeout,
+        proc = _run_hidden(
+            [
+                "gh",
+                "search",
+                "issues",
+                "--owner",
+                BOARD_OWNER,
+                "--state",
+                "open",
+                "--limit",
+                str(BOARD_SEARCH_LIMIT),
+                "--json",
+                "number,title,labels,url,repository",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return [], f"{repo}: {exc}"
+        return {}, f"{BOARD_OWNER}: {exc}"
     if proc.returncode != 0:
-        return [], f"{repo}: {(proc.stderr or '').strip()[:120]}"
+        return {}, f"{BOARD_OWNER}: {(proc.stderr or '').strip()[:120]}"
     try:
-        items = json.loads(proc.stdout or "[]")
+        payload = json.loads(proc.stdout or "[]")
     except json.JSONDecodeError as exc:
-        return [], f"{repo}: {exc}"
-    rows: list[dict[str, Any]] = []
-    for it in items:
-        labels = [x.get("name") for x in (it.get("labels") or [])]
-        rows.append({
-            "repo": repo,
-            "number": it.get("number"),
-            "title": it.get("title"),
-            "url": it.get("url") or ticket_github_url(f"{repo}#{it.get('number')}"),
-            "is_epic": "epic" in labels,
-            "blocked": "blocked" in labels,
-        })
-    return rows, ""
+        return {}, f"{BOARD_OWNER}: {exc}"
+    return issues_from_gh_search(payload), ""
 
 
-BOARD_REPOS: tuple[str, ...] = (
-    "Netie-AI/dms",
-    "Netie-AI/Cortex",
-    "Netie-AI/OpenVault",
-    "Netie-AI/netie-control",
-)
-
-
-def board(repos: tuple[str, ...] = BOARD_REPOS, *, timeout: float = BOARD_WAIT_S) -> Reading:
-    """Open epics and tickets per repo, straight from gh. Display only.
+def board(*, timeout: float = BOARD_WAIT_S) -> Reading:
+    """Open epics and tickets for the GitHub owner, regex-filtered. Display only.
 
     GET /v1/board uses BOARD_WAIT_S (4s). Pickup passes PICKUP_BOARD_WAIT_S
-    (1.5s) so a hung gh cannot stall unseated CLAIMS.
+    (1.5s) so a hung gh cannot stall unseated CLAIMS. Control does not assign.
     """
-    rows: list[dict[str, Any]] = []
-    unreachable: list[str] = []
-    with ThreadPoolExecutor(max_workers=max(len(repos), 1)) as pool:
-        for repo_rows, why in pool.map(partial(_gh_open_issues, timeout=timeout), repos):
-            rows.extend(repo_rows)
-            if why:
-                unreachable.append(why)
-
-    if unreachable and not rows:
-        return Reading.unreachable("gh issue list", "; ".join(unreachable))
+    data, why = _gh_search_open_issues(timeout=timeout)
+    if why:
+        return Reading.unreachable("gh search issues", why)
+    detail = ""
+    parts: list[str] = []
+    if data.get("truncated"):
+        parts.append(f"truncated at cap {data.get('cap')}")
+    skipped = data.get("skipped") or []
+    if skipped:
+        parts.append("skipped " + "; ".join(str(x) for x in skipped))
+    if parts:
+        detail = "; ".join(parts)
     return Reading(
         ok=True,
-        data={"items": rows, "unreachable": unreachable},
-        detail=("some repos unreachable: " + "; ".join(unreachable)) if unreachable else "",
-        source="gh issue list",
+        data=data,
+        detail=detail,
+        source="gh search issues",
     )
 
 

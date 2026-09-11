@@ -44,7 +44,7 @@ def _panel(title: str, reading: dict[str, Any], body_fn, extra: str = "", panel_
     cls = "panel" + (f" {extra}" if extra else "")
     id_attr = f' id="{html.escape(panel_id)}"' if panel_id else ""
     badge = f' <span class="count">{_esc(count)}</span>' if count else ""
-    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads", "plans", "prompts", "openide", "pointer"} else ""
+    wrap_id = f"{panel_id}Body" if panel_id in {"pickup", "board", "pads", "plans", "prompts", "openide", "pointer", "stage"} else ""
     wrap_open = f'<div id="{html.escape(wrap_id)}">' if wrap_id else ""
     wrap_close = "</div>" if wrap_id else ""
     if not reading.get("ok"):
@@ -127,20 +127,44 @@ def _ticket_card(r: dict[str, Any]) -> str:
     )
 
 
+def _named_omission(d: dict[str, Any]) -> str:
+    """Truncation and deny-regex skips must be named, never a quiet slice."""
+    bits: list[str] = []
+    if d.get("truncated"):
+        shown = d.get("shown") or d.get("count") or len(d.get("items") or [])
+        cap = d.get("cap") or shown
+        bits.append(
+            '<p class="absent">Truncated: showing '
+            f"{_esc(shown)} at cap {_esc(cap)}. Not a quiet omission.</p>"
+        )
+    skipped = [str(x) for x in (d.get("skipped") or []) if x]
+    if skipped:
+        bits.append(
+            '<p class="absent">Skipped by deny regex: '
+            + _esc("; ".join(skipped))
+            + "</p>"
+        )
+    return "".join(bits)
+
+
 def _board_body(d: dict[str, Any]) -> str:
     rows = [r for r in (d.get("items") or []) if isinstance(r, dict)]
     bits: list[str] = [
         "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign.</p>"
     ]
+    query = d.get("query")
+    if query:
+        bits.append(f"<p>Owner scan <code>{_esc(query)}</code>.</p>")
+    bits.append(_named_omission(d))
     if not rows:
         bits.append('<p class="absent">No open items returned.</p>')
     else:
         by_repo: dict[str, list[dict[str, Any]]] = {}
-        for r in rows[:80]:
+        for r in rows:
             by_repo.setdefault(str(r.get("repo") or "?"), []).append(r)
         cols = []
         for repo, items in by_repo.items():
-            cards = "".join(_ticket_card(x) for x in items[:24])
+            cards = "".join(_ticket_card(x) for x in items)
             cols.append(
                 f'<section class="kcol"><h3>{_esc(repo.split("/")[-1])} {len(items)}</h3>'
                 f"{cards}</section>"
@@ -155,6 +179,49 @@ def _board_body(d: dict[str, Any]) -> str:
     return "".join(bits)
 
 
+def public_board_page(reading: dict[str, Any], *, built_at: str = "") -> str:
+    """Static org board for GitHub Pages. Display only. Issues stay SoT."""
+    reading = reading if isinstance(reading, dict) else {}
+    ok = bool(reading.get("ok"))
+    data = reading.get("data") if isinstance(reading.get("data"), dict) else {}
+    if ok:
+        inner = _board_body(data)
+    else:
+        inner = (
+            '<p class="absent">Board unread: '
+            f'{_esc(reading.get("detail") or "no reason given")}</p>'
+            '<p class="absent">Source: <code>'
+            f'{_esc(reading.get("source") or "")}</code></p>'
+        )
+    built = ""
+    if built_at:
+        built = (
+            f"<p>Page built <code>{_esc(built_at)}</code>. "
+            "GitHub Issues are SoT. This page is a view, not a second ticket list.</p>"
+        )
+    return (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        "<title>Netie Control public board</title>"
+        "<style>body{margin:1rem;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;"
+        "background:#111;color:#e7ebe2}a{color:#8ab4ff}.absent{color:#c9a227}"
+        ".kanban{display:flex;gap:1rem;align-items:flex-start;overflow:auto}"
+        ".kcol{min-width:16rem;flex:1}"
+        ".work-row{margin:0.4rem 0;padding:0.4rem 0;border-bottom:1px solid #333}"
+        ".btn{display:inline-block;margin-right:0.3rem}code{font-size:12px}</style>"
+        "</head><body><h1>Netie-AI open tasks</h1>"
+        f"{built}"
+        "<p>Control does not assign. Claim on the GitHub issue. "
+        "POST /v1/run stays 405. PRD/Epic/Ticket minting stays Cortex "
+        "Ticket Runner, not this page (F-0030).</p>"
+        f"{inner}"
+        '<p>Repo <a href="https://github.com/Netie-AI/netie-control">'
+        "Netie-AI/netie-control</a>. Local desk "
+        "<code>http://127.0.0.1:8040/#board</code>.</p>"
+        "</body></html>"
+    )
+
+
 def _pickup_body(d: Any) -> str:
     d = d or {}
     items = [r for r in (d.get("items") or []) if isinstance(r, dict)]
@@ -166,6 +233,7 @@ def _pickup_body(d: Any) -> str:
         "<li>Cortex runs. POST /v1/run stays 405.</li>",
         "</ol>",
         f'<p class="absent">{_esc(d.get("rule") or "")}</p>',
+        _named_omission(d),
     ]
     if d.get("board_deferred"):
         bits.append(
@@ -181,7 +249,7 @@ def _pickup_body(d: Any) -> str:
         )
         return "".join(bits)
     rows_html = []
-    for r in items[:32]:
+    for r in items:
         href = str(r.get("href") or "")
         tags = f'<span class="tag">{_esc(r.get("kind"))}</span>'
         if r.get("is_epic"):
@@ -1156,6 +1224,45 @@ def _surfaces_body(d: Any) -> str:
     return "".join(bits)
 
 
+def _stage_body(d: Any) -> str:
+    d = d or {}
+    bits: list[str] = [
+        f'<p class="absent">{_esc(d.get("note") or "Backstage only.")}</p>'
+    ]
+    peers = d.get("peers") or []
+    if not peers:
+        bits.append('<p class="absent">No backstage listeners listed.</p>')
+    else:
+        bits.append("<table><tr><th>backend</th><th>port</th><th>owner</th><th>stage</th></tr>")
+        for row in peers:
+            if row.get("up"):
+                status, dot = "listening", "live"
+            else:
+                status, dot = "down", "down"
+            bits.append(
+                f'<tr><td><span class="dot {dot}">{_esc(row.get("name"))}</span></td>'
+                f"<td>{_esc(row.get('port'))}</td>"
+                f"<td>{_esc(row.get('owner'))}</td>"
+                f"<td>{_esc(status)}</td></tr>"
+            )
+        bits.append("</table>")
+    popups = d.get("popups") or []
+    bits.append("<p>Console popups (PowerShell). Owner is the parent process. Control does not hide or kill them.</p>")
+    if not popups:
+        bits.append('<p class="absent">No powershell.exe popups on the snapshot.</p>')
+        return "".join(bits)
+    bits.append("<table><tr><th>pid</th><th>image</th><th>parent</th><th>owner</th></tr>")
+    for row in popups[:24]:
+        bits.append(
+            f"<tr><td>{_esc(row.get('pid'))}</td>"
+            f"<td>{_esc(row.get('image'))}</td>"
+            f"<td>{_esc(row.get('parent'))}</td>"
+            f"<td>{_esc(row.get('owner'))}</td></tr>"
+        )
+    bits.append("</table>")
+    return "".join(bits)
+
+
 def _claude_pads_body(d: Any) -> str:
     d = d or {}
     pads = d.get("pads") or []
@@ -1455,6 +1562,7 @@ def render_page(state: dict[str, Any]) -> str:
 <nav>
 <a href="#cortex">Cortex</a>
 <a href="#pc">This PC</a>
+<a href="#stage">Backstage</a>
 <a href="#pads">Claude pads</a>
 <a href="#runtime">Watchdog</a>
 <a href="/constructor/">Constructor</a>
@@ -1531,6 +1639,7 @@ Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> 
 <code>GET /v1/prompts</code> is Crew/Cortex prompt surfaces. Control does not edit prompts.
 <code>GET /v1/openide</code> is AirGPT OpenIDE liveness. Control does not run the IDE.
 <code>GET /v1/pointer</code> is Pointer confirm-gate. Control does not start Electron.
+<code>GET /v1/stage</code> is backstage listeners and PowerShell popup owners. Control does not start or kill them.
 <code>GET /v1/insights</code> is Cortex pack/constructor detection. Constructor <code>/constructor/</code> seeds: Define data, Govern agents, Insights. Ontology stays Cortex. P1 parked.
 Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.</footer>
 </main>
@@ -1556,6 +1665,7 @@ Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this she
 <a class="btn btn-ghost" href="#board">Board</a></p>
 </div>
 {_panel("This PC right now", state.get("surfaces") or {{}}, _surfaces_body, "", "pc")}
+{_panel("Backstage backends", state.get("stage") or {{}}, _stage_body, "", "stage")}
 {_panel("Live Claude pads (this PC)", state.get("claude_pads") or {{}}, _claude_pads_body, "", "pads")}
 <div class="panel" id="lanes"><h2>Local CLI lanes</h2>
 <ol class="steps">
@@ -1570,7 +1680,7 @@ the founder's desktop software (R-0015).</p></div>
 </div>
 <script>
 (function () {{
-  const ids = ["pickup","plans","prompts","coordinate","you","board","fleet","runtime","cortex","vault","ship","crew","tools","kb","gate"];
+  const ids = ["pickup","plans","prompts","coordinate","you","board","fleet","runtime","cortex","vault","ship","crew","tools","kb","gate","stage","pc"];
   function show(id, scroll) {{
     const target = ids.includes(id) ? id : "pickup";
     document.querySelectorAll(".stage .panel").forEach(function (p) {{
@@ -1742,10 +1852,22 @@ the founder's desktop software (R-0015).</p></div>
       + '</a> <a class="btn btn-ghost" href="' + esc(href)
       + '" target="_blank" rel="noopener">Comment</a></span>';
   }}
+  function namedOmission(d) {{
+    var extra = "";
+    if (d.truncated) {{
+      extra += '<p class="absent">Truncated: showing '
+        + esc(d.shown || d.count || ((d.items || []).length))
+        + " at cap " + esc(d.cap || "") + ". Not a quiet omission.</p>";
+    }}
+    if (d.skipped && d.skipped.length) {{
+      extra += '<p class="absent">Skipped by deny regex: ' + esc(d.skipped.join("; ")) + "</p>";
+    }}
+    return extra;
+  }}
   function boardHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
-    var rows = (d.items || []).slice(0, 80);
+    var rows = d.items || [];
     var byRepo = {{}};
     rows.forEach(function (r) {{
       var repo = String(r.repo || "?");
@@ -1754,7 +1876,7 @@ the founder's desktop software (R-0015).</p></div>
     }});
     var cols = Object.keys(byRepo).map(function (repo) {{
       var items = byRepo[repo];
-      var cards = items.slice(0, 24).map(function (r) {{
+      var cards = items.map(function (r) {{
         var href = r.url || "";
         var short = String(r.repo || "").split("/").pop();
         var ticket = short + "#" + r.number;
@@ -1769,26 +1891,28 @@ the founder's desktop software (R-0015).</p></div>
       return '<section class="kcol"><h3>' + esc(String(repo).split("/").pop()) + " " + items.length
         + "</h3>" + cards + "</section>";
     }}).join("");
-    var extra = "";
+    var extra = namedOmission(d);
     if (d.unreachable && d.unreachable.length) {{
-      extra = '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
+      extra += '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
     }}
     var list = rows.length
       ? '<div class="kanban">' + cols + "</div>"
       : '<p class="absent">No open items returned.</p>';
+    var query = d.query ? "<p>Owner scan <code>" + esc(d.query) + "</code>.</p>" : "";
     return "<p>GitHub Issues are SoT. Open, then comment there. Control does not assign.</p>"
-      + list + extra;
+      + query + extra + list;
   }}
   function pickupHtml(b) {{
     if (!b.ok) return absentHtml(b.detail, b.source);
     var d = b.data || {{}};
-    var items = (d.items || []).slice(0, 32);
+    var items = d.items || [];
     var head = "<p>Pickup - claim on GitHub. Control does not assign.</p>"
       + '<ol class="steps">'
       + "<li>Open the GitHub issue and comment that you are seating.</li>"
       + "<li>Write CLAIMS.json. Then /ticket-runner in Claude Code. Control does not spawn.</li>"
       + "<li>Cortex runs. POST /v1/run stays 405.</li></ol>"
-      + '<p class="absent">' + esc(d.rule || "") + "</p>";
+      + '<p class="absent">' + esc(d.rule || "") + "</p>"
+      + namedOmission(d);
     if (d.board_deferred) {{
       head += '<p class="absent">Board deferred: ' + esc(d.board_detail || "unread")
         + ". Source: <code>" + esc(d.board_source || "GET /v1/board") + "</code>. "
@@ -2092,6 +2216,43 @@ the founder's desktop software (R-0015).</p></div>
     if (body) body.innerHTML = '<p class="absent">Pads unread. GET /v1/pads.</p>';
     var strip = document.getElementById("stripPads");
     if (strip) strip.textContent = "unread";
+  }});
+  function stageHtml(b) {{
+    if (!b.ok) return absentHtml(b.detail, b.source);
+    var d = b.data || {{}};
+    var head = '<p class="absent">' + esc(d.note || "Backstage only.") + "</p>";
+    var peers = d.peers || [];
+    if (!peers.length) {{
+      head += '<p class="absent">No backstage listeners listed.</p>';
+    }} else {{
+      head += "<table><tr><th>backend</th><th>port</th><th>owner</th><th>stage</th></tr>";
+      head += peers.map(function (row) {{
+        var status = row.up ? "listening" : "down";
+        var dot = row.up ? "live" : "down";
+        return "<tr><td><span class=\\"dot " + dot + "\\">" + esc(row.name)
+          + "</span></td><td>" + esc(row.port) + "</td><td>" + esc(row.owner)
+          + "</td><td>" + esc(status) + "</td></tr>";
+      }}).join("");
+      head += "</table>";
+    }}
+    head += "<p>Console popups (PowerShell). Owner is the parent process. Control does not hide or kill them.</p>";
+    var popups = d.popups || [];
+    if (!popups.length) {{
+      return head + '<p class="absent">No powershell.exe popups on the snapshot.</p>';
+    }}
+    head += "<table><tr><th>pid</th><th>image</th><th>parent</th><th>owner</th></tr>";
+    head += popups.slice(0, 24).map(function (row) {{
+      return "<tr><td>" + esc(row.pid) + "</td><td>" + esc(row.image) + "</td><td>"
+        + esc(row.parent) + "</td><td>" + esc(row.owner) + "</td></tr>";
+    }}).join("");
+    return head + "</table>";
+  }}
+  fetch("/v1/stage").then(readingJson).then(function (b) {{
+    var body = document.getElementById("stageBody");
+    if (body) body.innerHTML = stageHtml(b);
+  }}).catch(function () {{
+    var body = document.getElementById("stageBody");
+    if (body) body.innerHTML = '<p class="absent">Stage unread. GET /v1/stage.</p>';
   }});
   function chipHtml(live, href, label, title) {{
     var cls = live ? "live" : "down";

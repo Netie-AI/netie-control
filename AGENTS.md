@@ -5,15 +5,20 @@ Cursor, Claude Code, Grok Bot, cloud agents, and humans. Same law as `CLAUDE.md`
 
 This repo is public: https://github.com/Netie-AI/netie-control
 Live desk: `http://127.0.0.1:8040/`
+Public board (no git pull): `https://netie-ai.github.io/netie-control/`
+Actions reprints it hourly. GitHub Issues stay SoT. Control does not assign.
 
 ## Before you sit (do not skip)
 
 1. `GET http://127.0.0.1:8040/v1/contract`
-2. `GET /v1/pickup` then `GET /v1/fleet` then `GET /v1/you` then `GET /v1/coordinate` then `GET /v1/plans`
+2. `GET /v1/pickup` then `GET /v1/board` then `GET /v1/fleet` then `GET /v1/you` then `GET /v1/coordinate` then `GET /v1/plans`
 3. Claim the GitHub issue. Then CLAIMS.json. Then work.
 
 Control is the assignment **surface**. Control does not assign. Cortex runs.
-GitHub Issues are SoT (F-0025). Converse is Crew `http://127.0.0.1:8020`.
+GitHub Issues are SoT (F-0025). `git pull` is code. It is not the ticket list.
+`GET /v1/board` is `gh search issues --owner Netie-AI` plus allow/deny regex.
+Pickup lists every matching open issue it can read. Actions `Org board` reprints
+that census onto GitHub Pages hourly. Converse is Crew `http://127.0.0.1:8020`.
 
 ## Do not
 

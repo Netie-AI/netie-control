@@ -1,6 +1,6 @@
 # STATUS.md - Netie Control
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-11
 **Remote:** public https://github.com/Netie-AI/netie-control
 **Plane:** 4 - operator shell
 
@@ -20,18 +20,18 @@ python -m pytest D:\NetieControl\tests -q
 | OpenVault liveness | GET `/api/healthz` + `/api/usage` + free register + ship + `:3010` playground in parallel (1.5s). Display only. `priced=false`. No invented prices. Control does not start `:3010` |
 | Pointer | `GET /v1/pointer` confirm-gate from `plan-guard.js`. Process present/absent only. Does not start Electron |
 | Crew conveyor | Display-only. Probes Crew `/v1/belt` and `/crew/belt` (1.5s). Belt skipped Cortex ping is named skip, not a hung ping. Idle names wakes none. Converse stays on Crew. Control does not POST wakes or approve. Hung `:8020` falls through to engine `:8023` |
-| CI | `.github/workflows/ci.yml` - ruff + pytest. Remote still unpushed |
+| CI | `.github/workflows/ci.yml` ruff+pytest. `board.yml` regex tests + hourly GitHub Pages census. Ruff E501 still red |
 | Fleet view | Crew `/crew/health` (engine_ok named, never dropped) + KB `/healthz` + OpenVault custody copy. Display only |
 | Who/where | CLAIMS kanban + lane guess + live Claude pads (`GET /v1/pads`) + tasklist + parsed RUNTIME. `GET /v1/fleet` |
 | Chrome | Rail + inspector + kanban. Unread live-dot is warn, not mint. Strip unread is not `?`. Guaca/Rakazo tokens. Not Plane source, not Paperclip React |
 | YOU desk | Numbered HITL with GitHub URLs. HT1/HT2 HUMAN_STOP. Step 8: founder binds live `:8020` to engine Crew. No invented prices or host URLs. `GET /v1/you` |
-| Pickup tray | Unseated CLAIMS first. Board overlay 1.5s. Live issues stay `GET /v1/board`. Display only |
+| Pickup tray | Unseated CLAIMS first. Org board overlay 1.5s. Live issues stay `GET /v1/board`. No silent 40-cap. Display only |
 | Incomplete plans | `GET /v1/plans` analog remaining + parked lots. Display only. Does not unpark |
 | Grok/Crew pastes | `GET /v1/prompts` paste-ready grok-master + 7 writer briefs. WIP cap 2. Display only. Does not spawn |
 | Coordinate map | Numbered invoke lanes. `crew-bind` never green. Poll names chips unread; does not idle-wipe SSR workers. Talk = `/crew/wakes` in the peer pool (named source is wakes). GET `/` talk+health one pool. Pads live hop is `GET /v1/pads`. Live hops throw on HTTP error so FastAPI 404 cannot paint as a reading. Panel counts unread not ?. No spawn |
 | Agent contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/coordinate`. Desk names crew_belt and openvault waits. No assign POST |
 | Estate gate | Desk paints first (`GET /v1/gate not yet`, not checking). Live verdict is `GET /v1/gate`. Banner stays UNKNOWN until then |
-| Gh board | Desk paints first. Live issues are `GET /v1/board` (4s). Hung gh named unread. Pickup overlay 1.5s. Favicon 204 |
+| Gh board | `GET /v1/board` owner-wide `gh search` + regex. Public view: GitHub Pages hourly. Hung gh named unread |
 | Cortex governance | Displays `activity.governance` window (refusals, bound session ids). No ledger scrape |
 | Spaceship host | Display `SHIP_SPACESHIP.md`. Reopen Hosting Manager. No passwords. Do not buy New hosting |
 

@@ -118,8 +118,8 @@ def _reading(fn: Any) -> dict[str, Any]:
     return fn().to_dict()
 
 
-def state(*, include_gate: bool = True, include_board: bool = True, include_pads: bool = True) -> dict[str, Any]:
-    """Desk payload. Gate, gh board, and Claude pads are optional so GET / can paint first.
+def state(*, include_gate: bool = True, include_board: bool = True, include_pads: bool = True, include_stage: bool = True) -> dict[str, Any]:
+    """Desk payload. Gate, gh board, Claude pads, and backstage are optional so GET / can paint first.
 
     Talk, health, and belt share the pool so a hung /crew/health cannot stack
     a second wait after /crew/wakes.
@@ -149,6 +149,8 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
         jobs["gate"] = sources.estate_gate
     if include_pads:
         jobs["claude_pads"] = sources.claude_pads_view
+    if include_stage:
+        jobs["stage"] = sources.stage_backends_view
     out: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=max(len(jobs), 1)) as pool:
         futs = {key: pool.submit(_reading, fn) for key, fn in jobs.items()}
@@ -169,6 +171,11 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
             "GET /v1/pads",
             "deferred so the desk paints first",
         ).to_dict()
+    if not include_stage:
+        out["stage"] = sources.Reading.unreachable(
+            "GET /v1/stage",
+            "deferred so the desk paints first",
+        ).to_dict()
     out["pickup"] = sources.pickup_from_readings(out["fleet"], out["board"]).to_dict()
     out["crew_converse"] = sources.crew_base()
     out["contract"] = sources.agent_contract()
@@ -183,7 +190,7 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
 @router.get("/v1/state")
 def v1_state() -> dict[str, Any]:
     """Desk JSON without the estate gate or gh board. Those are GET /v1/gate and GET /v1/board."""
-    blob = state(include_gate=False, include_board=False, include_pads=False)
+    blob = state(include_gate=False, include_board=False, include_pads=False, include_stage=False)
     blob["display_only"] = True
     return blob
 
@@ -203,7 +210,7 @@ def v1_gate() -> dict[str, Any]:
 
 @router.get("/v1/board")
 def v1_board() -> dict[str, Any]:
-    """Open GitHub issues. Display only. Hung gh is named unread, not a 60s wait."""
+    """Open GitHub issues for the owner, regex-filtered. Display only. Hung gh is named unread."""
     reading = sources.board()
     return {
         "ok": reading.ok,
@@ -247,6 +254,19 @@ def v1_fleet() -> dict[str, Any]:
 def v1_pads() -> dict[str, Any]:
     """Live Claude pads on this PC. Display only. Does not start Claude (R-0015)."""
     reading = sources.claude_pads_view()
+    return {
+        "ok": reading.ok,
+        "display_only": True,
+        "source": reading.source,
+        "detail": reading.detail,
+        "data": reading.data,
+    }
+
+
+@router.get("/v1/stage")
+def v1_stage() -> dict[str, Any]:
+    """Backstage listeners and console-popup owners. Display only. Does not start or kill (R-0015)."""
+    reading = sources.stage_backends_view()
     return {
         "ok": reading.ok,
         "display_only": True,
@@ -502,7 +522,7 @@ def v1_coordinate() -> dict[str, Any]:
 
 @router.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    return HTMLResponse(render_page(state(include_gate=False, include_board=False, include_pads=False)))
+    return HTMLResponse(render_page(state(include_gate=False, include_board=False, include_pads=False, include_stage=False)))
 
 
 def create_app() -> FastAPI:

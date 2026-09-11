@@ -1558,13 +1558,32 @@ def test_board_tickets_are_open_and_comment_cards(
     assert client.post("/v1/board", json={"seat": True}).status_code != 200
 
 
-def test_board_defaults_include_control_repo() -> None:
-    from netie_control.sources import BOARD_REPOS, BOARD_WAIT_S, PICKUP_BOARD_WAIT_S
+def test_board_defaults_are_regex_owner_scan() -> None:
+    from netie_control.sources import (
+        BOARD_OWNER,
+        BOARD_SEARCH_LIMIT,
+        BOARD_WAIT_S,
+        PICKUP_BOARD_WAIT_S,
+        board_repo_allowed,
+    )
 
-    assert "Netie-AI/netie-control" in BOARD_REPOS
-    assert "Netie-AI/dms" in BOARD_REPOS
+    assert BOARD_OWNER == "Netie-AI"
+    assert board_repo_allowed("Netie-AI/netie-control")
+    assert board_repo_allowed("Netie-AI/dms")
     assert BOARD_WAIT_S <= 4.0
     assert PICKUP_BOARD_WAIT_S <= 1.5
+    assert BOARD_SEARCH_LIMIT >= 100
+
+
+def test_desk_js_paints_full_org_board_without_silent_slice(client: TestClient) -> None:
+    page = client.get("/").text
+    assert "namedOmission" in page
+    assert "Owner scan" in page
+    assert "items.slice(0, 24)" not in page
+    assert "(d.items || []).slice(0, 80)" not in page
+    assert "(d.items || []).slice(0, 32)" not in page
+    assert client.post("/v1/board", json={"assign": "me"}).status_code != 200
+    assert client.post("/v1/run").status_code == 405
 
 
 def test_v1_board_fail_closes_hung_gh(
@@ -2258,6 +2277,7 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["run_owner"] == "Cortex"
     assert body["assign_owner"] == "GitHub Issues + CLAIMS.json"
     assert any(u.endswith("/v1/pickup") for u in body["before_seating"])
+    assert any(u.endswith("/v1/board") for u in body["before_seating"])
     assert any(u.endswith("/v1/coordinate") for u in body["before_seating"])
     assert any(u.endswith("/v1/plans") for u in body["before_seating"])
     assert any(u.endswith("/v1/prompts") for u in body["before_seating"])
@@ -2271,6 +2291,7 @@ def test_v1_contract_is_display_only_and_does_not_assign(client: TestClient) -> 
     assert body["desk"]["you_steps"] == 8
     assert body["desk"]["usage_probe"] == "/api/usage"
     assert body["desk"]["board_wait_s"] == 4.0
+    assert body["desk"]["board_owner"] == "Netie-AI"
     assert body["desk"]["pickup_board_wait_s"] == 1.5
     assert body["desk"]["kb_wait_s"] == 1.5
     assert body["desk"]["airgpt_wait_s"] == 1.5
@@ -2947,7 +2968,7 @@ def test_get_home_talk_and_health_do_not_stack(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(sources, "incomplete_plans", instant)
     monkeypatch.setattr(sources, "prompt_catalog", instant)
     t0 = time.perf_counter()
-    blob = state(include_gate=False, include_board=False, include_pads=False)
+    blob = state(include_gate=False, include_board=False, include_pads=False, include_stage=False)
     elapsed = time.perf_counter() - t0
     assert elapsed < 0.6
     assert blob["crew_talk"]["ok"] is True
@@ -3093,6 +3114,7 @@ def test_v1_plans_names_absent_parking_unread(
 def test_v1_contract_includes_plans_before_seating(client: TestClient) -> None:
     body = client.get("/v1/contract").json()
     assert any(u.endswith("/v1/plans") for u in body["before_seating"])
+    assert any(u.endswith("/v1/board") for u in body["before_seating"])
     assert any(u.endswith("/v1/prompts") for u in body["before_seating"])
     assert any(u.endswith("/v1/fetch") for u in body["before_seating"])
     assert any(u.endswith("/v1/sidecar") for u in body["before_seating"])
@@ -3100,4 +3122,75 @@ def test_v1_contract_includes_plans_before_seating(client: TestClient) -> None:
     assert any(u.endswith("/v1/insights") for u in body["before_seating"])
     assert any(u.endswith("/v1/pointer") for u in body["before_seating"])
     assert body["desk"]["you_steps"] == 8
+
+
+def test_backstage_stage_is_display_only(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET /v1/stage lists backends behind the desk. Control does not start or kill them."""
+    from netie_control import sources
+
+    monkeypatch.setattr(
+        sources,
+        "stage_backends_view",
+        lambda: Reading(
+            ok=True,
+            source="backstage snapshot",
+            data={
+                "note": "Backstage only. Control did not start or kill them (R-0015).",
+                "peers": [
+                    {"name": "Netie Control", "port": 8040, "owner": "plane 4", "up": True},
+                    {"name": "Crew sidecar", "port": 8023, "owner": "Cortex Crew", "up": False},
+                ],
+                "popups": [
+                    {
+                        "image": "powershell.exe",
+                        "pid": 21272,
+                        "parent": "claude.exe",
+                        "owner": "Claude.app (not Plane 4)",
+                    }
+                ],
+            },
+        ),
+    )
+    page = client.get("/").text
+    assert "Backstage backends" in page
+    assert 'href="#stage"' in page
+    assert "GET /v1/stage" in page
+    assert 'fetch("/v1/stage")' in page
+    assert "Stage unread. GET /v1/stage." in page
+    assert "did not start or kill" in page or "deferred so the desk paints first" in page
+    assert "<iframe" not in page.lower()
+    body = client.get("/v1/stage").json()
+    assert body["ok"] is True
+    assert body["display_only"] is True
+    assert body["data"]["popups"][0]["owner"] == "Claude.app (not Plane 4)"
+    assert client.post("/v1/stage", json={"kill": True}).status_code != 200
+    assert client.post("/v1/run", json={"hide": "powershell"}).status_code == 405
+
+
+def test_run_hidden_sets_create_no_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+    import subprocess
+
+    from netie_control import sources
+
+    seen: dict[str, object] = {}
+
+    def fake_run(argv: object, **kwargs: object) -> object:
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, "", "")  # type: ignore[arg-type]
+
+    monkeypatch.setattr(sources.subprocess, "run", fake_run)
+    sources._run_hidden(
+        ["gh", "issue", "list"],
+        capture_output=True,
+        text=True,
+        timeout=1,
+        check=False,
+    )
+    if os.name == "nt":
+        flags = int(seen.get("creationflags") or 0)
+        assert flags & getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        assert seen.get("startupinfo") is not None
 
