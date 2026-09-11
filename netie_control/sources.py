@@ -2021,13 +2021,10 @@ def list_board_repos(*, timeout: float = BOARD_WAIT_S) -> tuple[list[str], str]:
 def _owner_search_issues(*, closed: bool, timeout: float) -> tuple[list[dict[str, Any]], str, bool]:
     argv = [
         "gh", "search", "issues", "--owner", BOARD_OWNER,
+        "--state", "closed" if closed else "open",
         "--limit", str(BOARD_SEARCH_LIMIT),
         "--json", "number,title,labels,url,repository,assignees,closedAt",
     ]
-    if closed:
-        argv[5:5] = ["--closed"]
-    else:
-        argv[5:5] = ["--state", "open"]
     items, why = _gh_json(argv, repo=BOARD_OWNER, timeout=timeout)
     if why:
         return [], why, False
@@ -2046,7 +2043,7 @@ def _owner_search_prs(*, timeout: float) -> tuple[list[dict[str, Any]], str]:
         [
             "gh", "search", "prs", "--owner", BOARD_OWNER, "--state", "open",
             "--limit", "40",
-            "--json", "number,title,url,repository,headRefName,isDraft,updatedAt",
+            "--json", "number,title,url,repository,isDraft,updatedAt",
         ],
         repo=BOARD_OWNER,
         timeout=timeout,

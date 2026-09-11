@@ -3025,7 +3025,7 @@ def _fake_gh_run(argv: list[str], **_k: object) -> object:
         "updatedAt": "2026-09-06T11:08:11Z",
         "repository": {"nameWithOwner": repo},
     }
-    if "search" in argv and "issues" in argv and "--closed" in argv:
+    if "search" in argv and "issues" in argv and "--state" in argv and argv[argv.index("--state") + 1] == "closed":
         Proc.stdout = json.dumps([search_closed])
     elif "search" in argv and "issues" in argv:
         Proc.stdout = json.dumps([search_issue])
