@@ -111,7 +111,7 @@ class Reading:
 class _Flight:
     """One read, in flight or finished. Followers wait on ``done`` instead of re-reading."""
 
-    __slots__ = ("done", "value", "error", "at")
+    __slots__ = ("at", "done", "error", "value")
 
     def __init__(self) -> None:
         self.done = threading.Event()
