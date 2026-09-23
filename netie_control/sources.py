@@ -328,6 +328,7 @@ def sidecar_base() -> str:
     return os.environ.get("NETIE_SIDECAR_URL", "http://127.0.0.1:8023").rstrip("/")
 
 
+@shared_read(0)
 def cortex_view() -> Reading:
     """Read-only Cortex probes. Does not touch the ledger; one ledger, via Cortex HTTP.
 
@@ -398,6 +399,7 @@ def slim_openvault_usage(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@shared_read(0)
 def openvault_view() -> Reading:
     """Display FreeRoute/vault liveness and spend counts. Does not choose a route.
 
@@ -481,6 +483,7 @@ def spaceship_host_view() -> Reading:
     )
 
 
+@shared_read(0)
 def crew_belt_view() -> Reading:
     """Display-only GET of Crew conveyor JSON. Control does not converse.
 
@@ -518,6 +521,7 @@ def slim_crew_wakes(payload: Any) -> dict[str, Any]:
     }
 
 
+@shared_read(0)
 def crew_talk_view() -> Reading:
     """Engine converse host. Does not copy Crew HTML (F-0026).
 
@@ -566,6 +570,7 @@ def slim_sidecar_health(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@shared_read(0)
 def sidecar_view() -> Reading:
     """Engine sidecar :8023 health. JSON only. HTML GET / is not enough (R-0011).
 
@@ -674,6 +679,7 @@ def slim_crew_health(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@shared_read(0)
 def crew_health_view(timeout: float = CREW_BELT_WAIT_S) -> Reading:
     """Display Crew laptop-tool arming. Control does not arm, start, or kill MCPs.
 
@@ -690,6 +696,7 @@ def crew_health_view(timeout: float = CREW_BELT_WAIT_S) -> Reading:
     return Reading(ok=True, data=slim_crew_health(payload), source=raw.source)
 
 
+@shared_read(0)
 def kb_view() -> Reading:
     """Liveness of the one skill registry. Counts only. No artifact bodies."""
     return loopback_get_json(f"{kb_base()}/healthz", timeout=KB_WAIT_S)
@@ -1379,6 +1386,7 @@ def _win_running_images(wanted: set[str]) -> set[str]:
         kernel32.CloseHandle(snap)
 
 
+@shared_read(0)
 def desktop_surfaces_view() -> Reading:
     """Which founder apps are running. Present/absent only. Never start or kill."""
     wanted = {image.lower() for image, _ in _SURFACE_IMAGES}

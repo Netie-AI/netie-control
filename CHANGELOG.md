@@ -1,3 +1,12 @@
+## 2026-09-23 - peer probes coalesce; ruff pinned; board notes both show
+
+Cortex, OpenVault, Crew belt/talk/health, sidecar, KB and the desktop
+snapshot are `shared_read(0)`: concurrent page loads share one probe, and
+nobody gets a finished result. `ruff` is pinned to 0.16.8 so a new release
+cannot turn CI red with no code change. The board panel no longer lets the
+unreachable note erase the truncated note (`extra =` was `extra +=`).
+Four 405s unchanged.
+
 ## 2026-09-23 - wheel ships control.css; CI builds and boots the wheel
 
 `pyproject.toml` declared no package data, so a wheel install served the

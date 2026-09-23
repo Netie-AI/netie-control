@@ -157,3 +157,61 @@ def test_unread_readings_are_not_kept() -> None:
     read()
     read()
     assert len(calls) == 2
+
+
+def _js_function(page: str, name: str) -> str:
+    """Cut one top-level JS function out of the rendered page by brace matching."""
+    start = page.index(f"function {name}(")
+    depth = 0
+    for i in range(page.index("{", start), len(page)):
+        depth += {"{": 1, "}": -1}.get(page[i], 0)
+        if depth == 0:
+            return page[start : i + 1]
+    raise AssertionError(f"unbalanced function {name}")
+
+
+def test_board_panel_keeps_truncated_and_unreachable_notes() -> None:
+    """Both notices are real states. One must not erase the other (was `extra =`)."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    assert node, "node is required to run the page's own boardHtml; install it"
+    page = TestClient(app).get("/").text
+    script = "\n".join(
+        [
+            _js_function(page, "esc"),
+            _js_function(page, "boardHtml"),
+            "function ticketCardHtml(){return ''} function absentHtml(){return 'ABSENT'}",
+            (
+                "process.stdout.write(boardHtml({ok:true,data:{truncated:true,shown:100,cap:100,"
+                "unreachable:['prs hung'],items:[]}}));"
+            ),
+        ]
+    )
+    out = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=20, check=False
+    )
+    assert out.returncode == 0, out.stderr
+    assert "Truncated: showing 100" in out.stdout
+    assert "Not shown, unreachable: prs hung" in out.stdout
+
+
+def test_concurrent_page_loads_share_one_peer_probe(monkeypatch) -> None:
+    calls = []
+    lock = threading.Lock()
+
+    def slow_probe(url: str, timeout: float = 2.0) -> sources.Reading:
+        with lock:
+            calls.append(url)
+        time.sleep(0.3)
+        return sources.Reading.unreachable(url, "test: nothing listening")
+
+    monkeypatch.setattr(sources, "loopback_get_json", slow_probe)
+    sources.cortex_view()
+    single = len(calls)
+    assert single > 0
+    calls.clear()
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        list(pool.map(lambda _: sources.cortex_view(), range(5)))
+    assert len(calls) == single, f"5 callers made {len(calls)} probes, one read makes {single}"

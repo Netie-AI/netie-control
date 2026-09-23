@@ -1695,7 +1695,7 @@ the founder's desktop software (R-0015).</p></div>
         + ". Not a quiet omission.</p>";
     }}
     if (d.unreachable && d.unreachable.length) {{
-      extra = '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
+      extra += '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
     }}
     if (b.age_s != null) {{
       extra += '<p class="absent">Shared read, taken ' + esc(b.age_s)
