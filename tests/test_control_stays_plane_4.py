@@ -25,7 +25,6 @@ from netie_control.sources import (
     Reading,
     loopback_get_json,
     loopback_get_status,
-    spaceship_host_view,
 )
 from netie_control.sources import (
     board as _REAL_BOARD,
@@ -456,16 +455,6 @@ def test_page_names_spaceship_host_to_reuse(client: TestClient) -> None:
     assert "ship@netie.ai" in page
     assert "Do not click New hosting" in page
     assert "FTP_PASS" not in page
-
-
-def test_spaceship_host_view_has_no_password() -> None:
-    reading = spaceship_host_view()
-    if not reading.ok:
-        pytest.skip(reading.detail)
-    blob = json.dumps(reading.data)
-    assert "FTP_PASS" not in blob
-    assert reading.data["ftp_user"] == "ship@netie.ai"
-    assert "hosting-manager" in reading.data["hosting_manager"]
 
 
 def test_loopback_probe_refuses_off_box_urls() -> None:

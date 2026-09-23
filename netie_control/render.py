@@ -1697,6 +1697,10 @@ the founder's desktop software (R-0015).</p></div>
     if (d.unreachable && d.unreachable.length) {{
       extra = '<p class="absent">Not shown, unreachable: ' + esc(d.unreachable.join("; ")) + "</p>";
     }}
+    if (b.age_s != null) {{
+      extra += '<p class="absent">Shared read, taken ' + esc(b.age_s)
+        + "s ago. Tabs share one gh scan instead of each running their own.</p>";
+    }}
     var poll = d.poll_s || 15;
     function sliceCol(title, rows, empty) {{
       rows = rows || [];

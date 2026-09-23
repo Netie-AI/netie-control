@@ -1,6 +1,6 @@
 # STATUS.md - Netie Control
 
-**Last updated:** 2026-09-11
+**Last updated:** 2026-09-23
 **Remote:** public https://github.com/Netie-AI/netie-control
 **Plane:** 4 - operator shell
 
@@ -19,7 +19,7 @@ python -m pytest D:\NetieControl\tests -q
 | Cortex first page | GET loopback `/health` + activity + features in one pool (1.5s). Hero with OpenVault. Hung unread named |
 | OpenVault liveness | GET `/api/healthz` + `/api/usage` in parallel (1.5s). Display only. `priced=false` |
 | Crew conveyor | Display-only `/v1/belt`. Converse stays Crew. Hung `:8020` falls through to `:8023` |
-| CI | `ci.yml` ruff+pytest. `board.yml` regex tests + hourly GitHub Pages census |
+| CI | `ci.yml` ruff+pytest + `wheel` (build, clean install, boot, CSS + 405 probe). `board.yml` regex + hourly Pages |
 | Fleet / YOU | CLAIMS kanban + pads + RUNTIME. YOU HITL. HT1/HT2 HUMAN_STOP. `GET /v1/you` |
 | Pickup | Unseated CLAIMS first. Org board overlay 1.5s. No silent 40-cap. Display only |
 | Coordinate | Invoke map. `crew-bind` never green. Talk = `/crew/wakes`. Sidecar `:8023` |
@@ -27,6 +27,7 @@ python -m pytest D:\NetieControl\tests -q
 | Gh board | Owner-wide `gh search` + regex. Slices: open/completed/PRs/Actions. Pages hourly |
 | Contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/board`. No assign POST |
 | Estate gate | Desk paints first. Live verdict `GET /v1/gate`. UNKNOWN until then |
+| Shared reads | N tabs = 1 gh scan (10s TTL) / 1 gate run. `age_s` named. Unread never kept |
 
 ## Open next
 

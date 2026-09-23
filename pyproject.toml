@@ -11,5 +11,10 @@ dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.3"]
 [tool.setuptools.packages.find]
 include = ["netie_control*"]
 
+# control.css ships in the wheel. Without it render._css() falls back to two colours
+# and the unread warn styling is gone. Editable installs hid this.
+[tool.setuptools.package-data]
+netie_control = ["static/*.css"]
+
 [tool.ruff]
 line-length = 100

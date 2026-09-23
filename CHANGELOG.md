@@ -1,3 +1,20 @@
+## 2026-09-23 - wheel ships control.css; CI builds and boots the wheel
+
+`pyproject.toml` declared no package data, so a wheel install served the
+two-colour fallback CSS and lost the unread warn styling. Editable installs
+hid it. `static/*.css` is package data now, and CI job `wheel` builds the
+wheel, installs it clean, boots it, and fails on fallback CSS or a non-405.
+
+## 2026-09-23 - shared reads: tabs share one gh scan
+
+`sources.shared_read` coalesces concurrent callers onto one read. `board`
+keeps a good reading for `BOARD_TTL_S` (10s, under the 15s ops poll).
+`estate_gate`, `claude_pads_view`, `coordinate_view` only coalesce: nobody
+gets a verdict from a run that finished before they asked. Unread readings
+are never kept. A shared reading carries `age_s`; the board panel says so.
+The no-FTP-password test runs on a fixture instead of skipping in CI.
+Four 405s unchanged.
+
 ## 2026-09-11 - gh search closed is --state, not --closed date
 
 `--closed` is a date filter; it ate `--limit` and zeroed completed.
