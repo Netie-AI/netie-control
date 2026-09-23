@@ -15,7 +15,7 @@ include = ["netie_control*"]
 # control.css ships in the wheel. Without it render._css() falls back to two colours
 # and the unread warn styling is gone. Editable installs hid this.
 [tool.setuptools.package-data]
-netie_control = ["static/*.css"]
+netie_control = ["static/*.css", "_imprint.json"]
 
 [tool.ruff]
 line-length = 100

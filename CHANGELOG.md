@@ -1,3 +1,11 @@
+## 2026-09-23 - build imprint: the shell says which commit it serves
+
+`netie_control/imprint.py` writes `_imprint.json` at build time (never
+hand-authored, gitignored). `/healthz` and the page footer show `build`:
+the wheel imprint, else git in a source checkout (with uncommitted changes
+named), else "unimprinted". CI `wheel` imprints, builds, boots, and fails
+unless `/healthz` reports the exact checked-out commit. Four 405s unchanged.
+
 ## 2026-09-23 - peer probes coalesce; ruff pinned; board notes both show
 
 Cortex, OpenVault, Crew belt/talk/health, sidecar, KB and the desktop

@@ -1320,6 +1320,21 @@ def _howto(contract: dict[str, Any]) -> str:
     )
 
 
+def _build_line(build: Any) -> str:
+    """Which code this page is. Unimprinted is said, never left blank."""
+    build = build if isinstance(build, dict) else {}
+    commit = build.get("commit")
+    if not commit:
+        why = build.get("source") or "build imprint unread"
+        return f'<br><span class="absent">Build unknown: {_esc(why)}.</span>'
+    bits = [_esc(build.get("source") or "")]
+    if build.get("built"):
+        bits.append("built " + _esc(build["built"]))
+    if build.get("dirty"):
+        bits.append("uncommitted changes")
+    return f"<br>Build <code>{_esc(str(commit)[:12])}</code> ({', '.join(b for b in bits if b)})."
+
+
 def render_page(state: dict[str, Any]) -> str:
     gate = state.get("gate") or {}
     passing = bool(gate.get("ok") and (gate.get("data") or {}).get("passing"))
@@ -1449,7 +1464,7 @@ Control <code>GET /v1/sidecar</code> is sidecar :8023 health.
 <code>GET /v1/launchers</code> lists cwd and argv. P-CTL-2 does not execute.
 Control <code>GET /v1/fleet</code> is CLAIMS seats. <code>GET /v1/pickup</code> is unseated work. Control does not assign.
 <code>GET /v1/ops</code> polls board + fleet + pickup every 15s. Display only.
-Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.</footer>
+Skill chest is Netie-KB <code>:8030</code>. Custody is OpenVault, never this shell.{_build_line(state.get("build"))}</footer>
 </main>
 <aside class="inspector">
 <div class="panel" id="focus"><h2>Selected ticket</h2>
