@@ -26,3 +26,36 @@ jobs:
         run: ruff check netie_control tests
       - name: Tests
         run: python -m pytest tests/ -q --tb=short
+
+  wheel:
+    # Editable installs read the source tree, so they cannot see packaging gaps.
+    # Build the wheel, install it clean, boot it, and check the page has its CSS.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Build wheel
+        run: pip wheel --no-deps -w dist .
+      - name: Install wheel into a clean venv
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+      - name: Boot installed wheel and probe
+        working-directory: /tmp
+        run: |
+          /tmp/venv/bin/python -m uvicorn netie_control.app:app --port 8040 &
+          for i in $(seq 1 30); do curl -sf localhost:8040/healthz && break; sleep 1; done
+          curl -sf localhost:8040/healthz | grep -q '"plane":4'
+          curl -sf localhost:8040/ -o page.html
+          grep -q "is-unread" page.html
+          if grep -q "body{background:#050506;color:#e7ebe2}" page.html; then
+            echo "page served fallback CSS: static/control.css missing from wheel"; exit 1
+          fi
+          for p in /v1/secrets /v1/route /v1/goal /v1/run; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "localhost:8040$p")
+            test "$code" = "405" || { echo "$p answered $code, want 405"; exit 1; }
+          done
