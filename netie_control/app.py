@@ -24,7 +24,7 @@ from typing import Any
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from netie_control import sources
+from netie_control import imprint, sources
 from netie_control.render import render_page
 
 CONSTRUCTOR_SKIN_NAMES = frozenset({"index.html", "app.js", "styles.css", "engine.js", "README.md"})
@@ -110,7 +110,7 @@ def _forbidden_response(path: str) -> JSONResponse:
 
 @router.get("/healthz")
 def healthz() -> dict[str, Any]:
-    return {"status": "ok", "product": "netie-control", "plane": 4}
+    return {"status": "ok", "product": "netie-control", "plane": 4, "build": imprint.read()}
 
 
 @router.get("/favicon.ico")
@@ -185,6 +185,7 @@ def state(*, include_gate: bool = True, include_board: bool = True, include_pads
     out["pickup"] = sources.pickup_from_readings(out["fleet"], out["board"]).to_dict()
     out["crew_converse"] = sources.crew_base()
     out["contract"] = sources.agent_contract()
+    out["build"] = imprint.read()
     out["coordinate"] = sources.coordinate_from_readings(out).to_dict()
     out["launchers"] = [
         {

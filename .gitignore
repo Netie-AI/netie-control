@@ -6,3 +6,5 @@ __pycache__/
 .venv/
 /site/
 /data/
+# Written at build time by python -m netie_control.imprint. Never hand-authored.
+netie_control/_imprint.json

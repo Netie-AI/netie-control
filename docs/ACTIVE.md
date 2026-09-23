@@ -6,6 +6,7 @@
 | `AGENTS.md` | Seating contract for Cursor, Claude Code, Grok Bot. Same clause as CLAUDE.md operator desk |
 | `netie_control/sources.py` | Read-only readers. Every one returns real data or an explicit unreachable marker. Writes nothing. `shared_read` coalesces board (10s TTL), gate, pads, coordinate, and every loopback peer probe; reused readings carry `age_s` |
 | `netie_control/render.py` | The operator page plus `public_board_page` for GitHub Pages. An unreachable source renders its reason, never an empty panel. Live hops use `readingJson` so HTTP 404 cannot paint as a quiet reading |
+| `netie_control/imprint.py` | Build imprint. `python -m netie_control.imprint <sha>` writes `_imprint.json` at build time. `/healthz` `build` and the footer show it; unimprinted is stated |
 | `netie_control/publish_board.py` | CI writer for Pages HTML. Display only. Not SoT. Control still does not assign |
 | `netie_control/static/control.css` | Operator chrome. Unread live-dot is warn (`is-unread`). Guaca/Rakazo tokens, Gastown live-dots, original layout |
 | `tests/test_control_stays_plane_4.py` | The constitution as tests - 405s, no key material, no desktop launcher, unknown never renders green. Talk live is `/crew/wakes`. `crew-bind` never greens. Sidecar `:8023` JSON health. |
