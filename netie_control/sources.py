@@ -12,16 +12,19 @@ holds no keys and owns no route decision (NETIE.md section 3).
 from __future__ import annotations
 
 import ctypes
+import functools
 import http.client
 import json
 import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +36,9 @@ OPENVAULT_USAGE_WAIT_S = 1.5
 PICKUP_BOARD_WAIT_S = 1.5
 BOARD_WAIT_S = 4.0
 OPS_POLL_S = 15.0
+#: gh board reads are shared across tabs for this long. Under OPS_POLL_S so a
+#: poll never shows a board older than one poll gap plus this.
+BOARD_TTL_S = 10.0
 RUNNING_ROLES = frozenset({"SEATED", "RUNNING"})
 OCCUPIED_ROLES = frozenset({"SEATED", "RUNNING", "HELD", "EXTRA_STOP"})
 BOARD_SLICES = ("open", "completed", "prs", "actions")
@@ -86,13 +92,96 @@ class Reading:
     data: Any = None
     detail: str = ""
     source: str = ""
+    #: Seconds since this reading was taken, when it came from a shared read rather
+    #: than a fresh one. None means read for this request. A cached answer that
+    #: hides its age would be a silent fallback.
+    age_s: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"ok": self.ok, "data": self.data, "detail": self.detail, "source": self.source}
+        blob = {"ok": self.ok, "data": self.data, "detail": self.detail, "source": self.source}
+        if self.age_s is not None:
+            blob["age_s"] = self.age_s
+        return blob
 
     @classmethod
     def unreachable(cls, source: str, why: str) -> Reading:
         return cls(ok=False, data=None, detail=why, source=source)
+
+
+class _Flight:
+    """One read, in flight or finished. Followers wait on ``done`` instead of re-reading."""
+
+    __slots__ = ("done", "value", "error", "at")
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.value: Reading | None = None
+        self.error: BaseException | None = None
+        self.at = 0.0
+
+
+_SHARED: dict[tuple[Any, ...], _Flight] = {}
+_SHARED_LOCK = threading.Lock()
+
+
+def clear_shared_reads() -> None:
+    """Forget every shared read. Tests call this; production never needs to."""
+    with _SHARED_LOCK:
+        _SHARED.clear()
+
+
+def shared_read(ttl_s: float):
+    """Coalesce concurrent callers onto one read, and reuse it for ``ttl_s`` seconds.
+
+    Ten tabs polling the board must cost one ``gh`` fan-out, not ten. ``ttl_s=0``
+    only coalesces: callers who arrive while a read is running share it, and the
+    next caller after it finishes reads fresh. A reused reading carries ``age_s``
+    so the page can say how old it is. Nothing here writes to the estate.
+    """
+
+    def deco(fn: Any) -> Any:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Reading:
+            key = (fn.__qualname__, args, tuple(sorted(kwargs.items())))
+            with _SHARED_LOCK:
+                flight = _SHARED.get(key)
+                if flight is not None and flight.done.is_set() and (
+                    time.monotonic() - flight.at >= ttl_s
+                ):
+                    flight = None
+                leader = flight is None
+                if leader:
+                    flight = _Flight()
+                    _SHARED[key] = flight
+            if leader:
+                try:
+                    flight.value = fn(*args, **kwargs)
+                except BaseException as exc:  # noqa: BLE001 - re-raised to every caller
+                    flight.error = exc
+                finally:
+                    flight.at = time.monotonic()
+                    flight.done.set()
+                    # Only a good reading is kept. An unread source is re-read by the
+                    # next caller, so a recovery shows at once instead of after ttl_s.
+                    kept = flight.error is None and ttl_s > 0 and bool(
+                        getattr(flight.value, "ok", False)
+                    )
+                    if not kept:
+                        with _SHARED_LOCK:
+                            if _SHARED.get(key) is flight:
+                                del _SHARED[key]
+                if flight.error is not None:
+                    raise flight.error
+                return flight.value
+            flight.done.wait()
+            if flight.error is not None:
+                raise flight.error
+            age = round(time.monotonic() - flight.at, 1)
+            return replace(flight.value, age_s=age)
+
+        return wrapper
+
+    return deco
 
 
 def loopback_get_json(url: str, timeout: float = 2.0) -> Reading:
@@ -1168,6 +1257,7 @@ def _claude_argv() -> list[str] | None:
     return None
 
 
+@shared_read(0)
 def claude_pads_view() -> Reading:
     """Live Claude Code pads on this PC. List only. Does not start Claude (R-0015)."""
     argv = _claude_argv()
@@ -1719,6 +1809,7 @@ def coordinate_from_readings(blob: dict[str, Any]) -> Reading:
     )
 
 
+@shared_read(0)
 def coordinate_view() -> Reading:
     """Live invoke map. Probes peers and this-PC surfaces. Writes nothing.
 
@@ -1773,11 +1864,14 @@ def claims_board() -> Reading:
         return Reading.unreachable(str(p), f"claims board is not valid JSON: {exc}")
 
 
+@shared_read(0)
 def estate_gate() -> Reading:
     """Run the estate gate and surface its fails verbatim.
 
     Deliberately runs the real gate rather than reading a cached verdict. A cached
-    green is a claim about the past; the operator is asking about now.
+    green is a claim about the past; the operator is asking about now. Callers who
+    arrive while a run is in flight share that run (``shared_read(0)``); nobody is
+    handed a verdict from a run that had already finished before they asked.
     """
     script = AGENTS / "estate_gate.py"
     if not script.is_file():
@@ -2083,6 +2177,7 @@ _BOARD_FETCHERS: dict[str, Any] = {
 }
 
 
+@shared_read(BOARD_TTL_S)
 def board(
     repos: tuple[str, ...] | None = None,
     *,

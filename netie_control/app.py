@@ -217,6 +217,7 @@ def v1_gate() -> dict[str, Any]:
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 
@@ -230,9 +231,11 @@ def v1_board() -> dict[str, Any]:
         "assign_owner": "GitHub Issues + CLAIMS.json",
         "poll_s": sources.OPS_POLL_S,
         "poll": "/v1/ops",
+        "ttl_s": sources.BOARD_TTL_S,
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 
@@ -291,6 +294,7 @@ def v1_pads() -> dict[str, Any]:
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 
@@ -399,6 +403,7 @@ def v1_coordinate() -> dict[str, Any]:
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 

@@ -1,6 +1,6 @@
 # STATUS.md - Netie Control
 
-**Last updated:** 2026-09-11
+**Last updated:** 2026-09-23
 **Remote:** public https://github.com/Netie-AI/netie-control
 **Plane:** 4 - operator shell
 
@@ -27,6 +27,7 @@ python -m pytest D:\NetieControl\tests -q
 | Gh board | Owner-wide `gh search` + regex. Slices: open/completed/PRs/Actions. Pages hourly |
 | Contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/board`. No assign POST |
 | Estate gate | Desk paints first. Live verdict `GET /v1/gate`. UNKNOWN until then |
+| Shared reads | N tabs = 1 gh scan (10s TTL) / 1 gate run. `age_s` named. Unread never kept |
 
 ## Open next
 

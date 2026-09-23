@@ -1,3 +1,13 @@
+## 2026-09-23 - shared reads: tabs share one gh scan
+
+`sources.shared_read` coalesces concurrent callers onto one read. `board`
+keeps a good reading for `BOARD_TTL_S` (10s, under the 15s ops poll).
+`estate_gate`, `claude_pads_view`, `coordinate_view` only coalesce: nobody
+gets a verdict from a run that finished before they asked. Unread readings
+are never kept. A shared reading carries `age_s`; the board panel says so.
+The no-FTP-password test runs on a fixture instead of skipping in CI.
+Four 405s unchanged.
+
 ## 2026-09-11 - gh search closed is --state, not --closed date
 
 `--closed` is a date filter; it ate `--limit` and zeroed completed.
