@@ -1224,6 +1224,7 @@ def board_if_quick(wait_s: float | None = None) -> Reading:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
+@shared_read(0)
 def pickup_view(*, board_wait: float | None = None) -> Reading:
     """CLAIMS unseated tray. Board only if gh answers in time. Does not seat."""
     fleet = fleet_view().to_dict()
@@ -1231,6 +1232,7 @@ def pickup_view(*, board_wait: float | None = None) -> Reading:
     return pickup_from_readings(fleet, board)
 
 
+@shared_read(0)
 def fleet_view() -> Reading:
     """CLAIMS seats plus snapshot titles. Control does not write the board."""
     claims = claims_board()
@@ -1643,7 +1645,9 @@ def coordinate_payload(
             "owner": "Control",
             "invoke": "GET /v1/fleet",
             "href": "/v1/fleet",
-            "live": True,
+            # Live only when CLAIMS.json was read. Unread claims never paint green.
+            "live": bool(fleet.get("ok")),
+            "unread": not fleet.get("ok"),
             "do_not": "Control does not assign",
         },
         {
@@ -1851,6 +1855,7 @@ def coordinate_view() -> Reading:
     return coordinate_from_readings(blob)
 
 
+@shared_read(0)
 def runtime_view() -> Reading:
     """The watchdog's plane view. Stale is a real state and must be visible as one."""
     reading = _read_text(AGENTS / "RUNTIME.md")
@@ -1860,6 +1865,7 @@ def runtime_view() -> Reading:
     return Reading(ok=True, data=parse_runtime_md(text), source=reading.source)
 
 
+@shared_read(0)
 def claims_board() -> Reading:
     """Who holds what. The answer to 'may I seat here' before a branch exists."""
     p = AGENTS / "CLAIMS.json"
@@ -2282,6 +2288,7 @@ def board(
     )
 
 
+@shared_read(0)
 def ops_view() -> Reading:
     """Live shared ops desk: GitHub board + CLAIMS fleet + pickup. Display only.
 
