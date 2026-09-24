@@ -1,3 +1,16 @@
+## 2026-09-24 - gzip + no-store, ops poll coalesced, load test, Pages imprint
+
+Built by a 4-builder / 4-skeptic workflow, integrated and fixed here.
+GET / goes 72 KB -> 17 KB gzipped (GZipMiddleware, min 1024). `/` and
+`/v1/*` carry `Cache-Control: no-store`: the only cache is `shared_read`,
+which states its age. `ops_view`, `fleet_view`, `pickup_view`,
+`claims_board`, `runtime_view` coalesce; `/v1/ops` `/v1/fleet`
+`/v1/pickup` now return `age_s`. `tests/test_load.py`: 40 concurrent tabs
+cost one gh board fan-out (4 gh calls; 80 without the cache). The public
+Pages board shows its build line. Fix (rule 5): the coordinate `fleet`
+lane was hardcoded live; it is now live only when CLAIMS.json was read.
+Four 405s unchanged.
+
 ## 2026-09-23 - build imprint: the shell says which commit it serves
 
 `netie_control/imprint.py` writes `_imprint.json` at build time (never

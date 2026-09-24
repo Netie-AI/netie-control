@@ -4,7 +4,7 @@
 |---|---|
 | `netie_control/app.py` | FastAPI app. Routes, four 405 refusals, `GET /v1/contract` `GET /v1/coordinate` `GET /v1/belt` `GET /v1/fleet` `GET /v1/you` `GET /v1/pickup` `GET /v1/gate` `GET /v1/board` `GET /v1/ops` (15s poll) `GET /v1/pads` `GET /v1/sidecar` `GET /v1/plans` `GET /v1/prompts` `GET /v1/fetch` `GET /v1/launchers` display proxies, Constructor sketch at `/constructor/` (missing skin is HTML 503 unread) |
 | `AGENTS.md` | Seating contract for Cursor, Claude Code, Grok Bot. Same clause as CLAUDE.md operator desk |
-| `netie_control/sources.py` | Read-only readers. Every one returns real data or an explicit unreachable marker. Writes nothing. `shared_read` coalesces board (10s TTL), gate, pads, coordinate, and every loopback peer probe; reused readings carry `age_s` |
+| `netie_control/sources.py` | Read-only readers. Every one returns real data or an explicit unreachable marker. Writes nothing. `shared_read` coalesces board (10s TTL), gate, pads, coordinate, ops, fleet, pickup, claims, runtime, and every loopback peer probe; reused readings carry `age_s`. Shared reads are per process: run one uvicorn worker, or each worker scans on its own |
 | `netie_control/render.py` | The operator page plus `public_board_page` for GitHub Pages. An unreachable source renders its reason, never an empty panel. Live hops use `readingJson` so HTTP 404 cannot paint as a quiet reading |
 | `netie_control/imprint.py` | Build imprint. `python -m netie_control.imprint <sha>` writes `_imprint.json` at build time. `/healthz` `build` and the footer show it; unimprinted is stated |
 | `netie_control/publish_board.py` | CI writer for Pages HTML. Display only. Not SoT. Control still does not assign |

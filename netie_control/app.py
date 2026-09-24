@@ -256,6 +256,7 @@ def v1_ops() -> dict[str, Any]:
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 
@@ -284,6 +285,7 @@ def v1_fleet() -> dict[str, Any]:
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 
@@ -335,6 +337,7 @@ def v1_pickup() -> dict[str, Any]:
         "source": reading.source,
         "detail": reading.detail,
         "data": reading.data,
+        "age_s": reading.age_s,
     }
 
 

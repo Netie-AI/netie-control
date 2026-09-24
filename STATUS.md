@@ -28,7 +28,8 @@ python -m pytest D:\NetieControl\tests -q
 | Contract | `AGENTS.md` + `GET /v1/contract`. before_seating includes `/v1/board`. No assign POST |
 | Estate gate | Desk paints first. Live verdict `GET /v1/gate`. UNKNOWN until then |
 | Build imprint | `/healthz` `build` = wheel imprint / git checkout (+dirty) / unimprinted. CI asserts exact commit |
-| Shared reads | N tabs = 1 gh scan (10s TTL) / 1 gate run. `age_s` named. Unread never kept |
+| Shared reads | N tabs = 1 gh scan (10s TTL) / 1 gate run / 1 CLAIMS read. `age_s` named. Unread never kept. Load test: 40 tabs = 4 gh calls |
+| HTTP | gzip (GET / 72 KB -> 17 KB). `/` and `/v1/*` `Cache-Control: no-store` |
 
 ## Open next
 

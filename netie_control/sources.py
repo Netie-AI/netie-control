@@ -1645,7 +1645,9 @@ def coordinate_payload(
             "owner": "Control",
             "invoke": "GET /v1/fleet",
             "href": "/v1/fleet",
-            "live": True,
+            # Live only when CLAIMS.json was read. Unread claims never paint green.
+            "live": bool(fleet.get("ok")),
+            "unread": not fleet.get("ok"),
             "do_not": "Control does not assign",
         },
         {
