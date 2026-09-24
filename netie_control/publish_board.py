@@ -7,6 +7,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from netie_control import imprint
 from netie_control.render import public_board_page
 from netie_control.sources import board
 
@@ -17,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     timeout = float(os.environ.get("NETIE_BOARD_WAIT_S", "15"))
     reading = board(timeout=timeout)
     built_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    html = public_board_page(reading.to_dict(), built_at=built_at)
+    html = public_board_page(reading.to_dict(), built_at=built_at, build=imprint.read())
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(html, encoding="utf-8")
     (dest.parent / ".nojekyll").write_text("", encoding="utf-8")

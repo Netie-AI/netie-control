@@ -175,7 +175,9 @@ def _slice_col(title: str, rows: list[dict[str, Any]], empty: str) -> str:
     )
 
 
-def public_board_page(reading: dict[str, Any], *, built_at: str = "") -> str:
+def public_board_page(
+    reading: dict[str, Any], *, built_at: str = "", build: dict[str, Any] | None = None
+) -> str:
     """Static org board for GitHub Pages. Display only. Issues stay SoT."""
     reading = reading if isinstance(reading, dict) else {}
     ok = bool(reading.get("ok"))
@@ -189,12 +191,15 @@ def public_board_page(reading: dict[str, Any], *, built_at: str = "") -> str:
             '<p class="absent">Source: <code>'
             f'{_esc(reading.get("source") or "")}</code></p>'
         )
+    if build is None:
+        build = {"source": "build imprint not given to this page"}
     built = ""
     if built_at:
         built = (
-            f"<p>Page built <code>{_esc(built_at)}</code>. "
-            "GitHub Issues are SoT. This page is a view, not a second ticket list.</p>"
+            f"Page built <code>{_esc(built_at)}</code>. "
+            "GitHub Issues are SoT. This page is a view, not a second ticket list."
         )
+    built = f"<p>{built}{_build_line(build)}</p>"
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
