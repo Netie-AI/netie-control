@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.datastructures import MutableHeaders
 
 from netie_control import imprint, sources
 from netie_control.render import render_page
@@ -498,7 +500,36 @@ def create_app() -> FastAPI:
             include_in_schema=True,
         )
 
+    app.add_middleware(_NoStore)
+    # GET / is ~72 KB of HTML and every tab polls JSON; compress anything over 1 KB.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     return app
+
+
+class _NoStore:
+    """Cache-Control: no-store on / and /v1/*.
+
+    This page's truth must not be served stale by a browser or proxy. The only cache
+    allowed is sources.shared_read, which states its age (Reading.age_s). Pure ASGI on
+    purpose: BaseHTTPMiddleware re-streams the body, which makes GZip compress even
+    responses under its minimum_size.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        if path != "/" and not path.startswith("/v1/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def _send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, _send)
 
 
 app = create_app()
